@@ -13,6 +13,50 @@
 <body>
   <h1>PWA mínima 🚗</h1>
   <p>Funciona offline y se puede instalar</p>
+  <button onclick="guardarCobro()">Guardar cobro</button>
+  <button onclick="verCobros()">Ver cobros</button>
+
+  <script src="https://unpkg.com/dexie@latest/dist/dexie.min.js"></script>
+
+  <script>
+    const db = new Dexie("CocheraDB");
+
+    db.version(1).stores({
+      cobros: "++id, tipoVehiculo, tamaño, turno, monto, fecha"
+    });
+
+    console.log("Base de datos creada");
+
+    if (navigator.storage && navigator.storage.persist) {
+      navigator.storage.persist().then(persisted => {
+        console.log(
+                persisted
+                        ? "Almacenamiento persistente concedido"
+                        : "Persistencia no garantizada"
+        );
+      });
+    }
+  </script>
+
+  <script>
+    async function guardarCobro() {
+      await db.cobros.add({
+        tipoVehiculo: "auto",
+        tamaño: "grande",
+        turno: "noche",
+        monto: 20,
+        fecha: new Date()
+      });
+
+      alert("Cobro guardado ✅");
+    }
+
+    async function verCobros() {
+      const cobros = await db.cobros.toArray();
+      console.log(cobros);
+      alert(`Hay ${cobros.length} cobros registrados`);
+    }
+  </script>
 
   <script>
     if ('serviceWorker' in navigator) {
