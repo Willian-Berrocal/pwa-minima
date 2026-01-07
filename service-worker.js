@@ -1,8 +1,5 @@
 const CACHE_NAME = "pwa-cache-v1";
 const FILES_TO_CACHE = [
-  "/",
-  "/index.html",
-  "/manifest.json"
 ];
 
 self.addEventListener("install", event => {
