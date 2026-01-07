@@ -1,69 +1,34 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-
-  <title>PWA mínima</title>
-
-  <!-- Manifest -->
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Cochera — Menú</title>
   <link rel="manifest" href="manifest.json" />
-
+  <style>
+    body { font-family: sans-serif; display:flex; flex-direction:column; align-items:center; gap:20px; padding:40px; }
+    h1{margin-top:10px}
+    .big-btn {
+      display:block; width:260px; height:64px; font-size:20px;
+      border-radius:10px; border:none; cursor:pointer;
+      background:#2c3e50; color:#fff;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+    }
+    .nav-small { position:fixed; left:12px; top:12px; font-size:18px; }
+  </style>
 </head>
 <body>
-  <h1>PWA mínima 🚗</h1>
-  <p>Funciona offline y se puede instalar</p>
-  <button onclick="guardarCobro()">Guardar cobro</button>
-  <button onclick="verCobros()">Ver cobros</button>
+<h1>Cochera</h1>
+<p>Elige una acción</p>
 
-  <script src="https://unpkg.com/dexie@latest/dist/dexie.min.js"></script>
+<a href="ingreso.html"><button class="big-btn">➡️ Ingreso</button></a>
+<a href="salida.html"><button class="big-btn">⬅️ Salida</button></a>
 
-  <script>
-    const db = new Dexie("CocheraDB");
-
-    db.version(1).stores({
-      cobros: "++id, tipoVehiculo, tamaño, turno, monto, fecha"
-    });
-
-    console.log("Base de datos creada");
-
-    if (navigator.storage && navigator.storage.persist) {
-      navigator.storage.persist().then(persisted => {
-        console.log(
-                persisted
-                        ? "Almacenamiento persistente concedido"
-                        : "Persistencia no garantizada"
-        );
-      });
-    }
-  </script>
-
-  <script>
-    async function guardarCobro() {
-      await db.cobros.add({
-        tipoVehiculo: "auto",
-        tamaño: "grande",
-        turno: "noche",
-        monto: 20,
-        fecha: new Date()
-      });
-
-      alert("Cobro guardado ✅");
-    }
-
-    async function verCobros() {
-      const cobros = await db.cobros.toArray();
-      console.log(cobros);
-      alert(`Hay ${cobros.length} cobros registrados`);
-    }
-  </script>
-
-  <script>
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('service-worker.js')
-        .then(() => console.log('Service Worker registrado'))
-        .catch(err => console.error('Error:', err));
-    }
-  </script>
+<script>
+  // Service Worker registration
+  if('serviceWorker' in navigator){
+    navigator.serviceWorker.register('./service-worker.js').catch(e => console.error(e));
+  }
+</script>
 </body>
 </html>

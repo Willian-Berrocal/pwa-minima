@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Cochera — Ingreso</title>
+    <link rel="manifest" href="manifest.json" />
+    <style>
+        body{font-family:sans-serif;padding:20px;display:flex;flex-direction:column;gap:12px}
+        label{font-weight:600}
+        input,select{font-size:18px;padding:10px;border-radius:8px;border:1px solid #ccc}
+        .row{display:flex;gap:10px}
+        .btn{height:56px;border-radius:10px;border:none;font-size:18px;cursor:pointer}
+        .btn-primary{background:#2c3e50;color:#fff}
+        .btn-back{background:#eee}
+        .quick {display:flex;gap:8px;margin-top:6px}
+        .quick button{padding:8px 12px;border-radius:8px;border:1px solid #bbb;background:#fff}
+    </style>
+</head>
+<body>
+<a href="index.html" class="btn-back">← Volver</a>
+<h1>Ingreso</h1>
+
+<form id="formIngreso">
+    <label for="matricula">Matrícula</label><br>
+    <input id="matricula" name="matricula" type="text" inputmode="latin" required minlength="3" placeholder="ABC123" />
+
+    <label for="tarifa">Tarifa</label><br>
+    <select id="tarifa" name="tarifa" required>
+        <option value="tarifa1">Tarifa 1</option>
+        <option value="tarifa2">Tarifa 2</option>
+        <option value="tarifa3">Tarifa 3</option>
+    </select>
+
+    <div class="quick">
+        <button type="button" onclick="setTarifa('tarifa1')">Tarifa 1</button>
+        <button type="button" onclick="setTarifa('tarifa2')">Tarifa 2</button>
+        <button type="button" onclick="setTarifa('tarifa3')">Tarifa 3</button>
+    </div>
+
+    <div style="height:12px"></div>
+
+    <button class="btn btn-primary" type="submit">Guardar ingreso</button>
+</form>
+
+<script src="https://unpkg.com/dexie@latest/dist/dexie.min.js"></script>
+<script>
+    // DB setup
+    const db = new Dexie("CocheraDB");
+    db.version(1).stores({
+        cobros: "++id, matricula, tarifa, fechaIngreso"
+    });
+
+    // pedir persistencia
+    if (navigator.storage && navigator.storage.persist) {
+        navigator.storage.persist().then(p => console.log("persist:", p));
+    }
+
+    function setTarifa(t){ document.getElementById('tarifa').value = t; }
+
+    document.getElementById('formIngreso').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const matricula = document.getElementById('matricula').value.trim().toUpperCase();
+        const tarifa = document.getElementById('tarifa').value;
+        if(!matricula) { alert('Ingrese matrícula'); return; }
+
+        const fecha = new Date().toISOString();
+        await db.cobros.add({ matricula, tarifa, fechaIngreso: fecha });
+        alert('Ingreso registrado: ' + matricula);
+        // limpiar
+        document.getElementById('matricula').value = '';
+        document.getElementById('matricula').focus();
+    });
+
+    // service worker
+    if('serviceWorker' in navigator) navigator.serviceWorker.register('./service-worker.js').catch(()=>{});
+</script>
+</body>
+</html>

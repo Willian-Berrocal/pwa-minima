@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width,initial-scale=1"/>
+    <title>Cochera — Salida</title>
+    <link rel="manifest" href="manifest.json" />
+    <style>
+        body{font-family:sans-serif;padding:12px}
+        table{width:100%;border-collapse:collapse;margin-top:8px}
+        th,td{padding:8px;border:1px solid #e0e0e0;text-align:left;font-size:16px}
+        .btn{padding:6px 10px;border-radius:6px;border:1px solid #ccc;background:#fff;cursor:pointer}
+        .btn-danger{background:#e74c3c;color:#fff;border:none}
+        .top {display:flex;justify-content:space-between;align-items:center}
+        .modal {position:fixed;left:0;right:0;top:0;bottom:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center}
+        .modal-content{background:#fff;padding:20px;border-radius:8px;min-width:260px}
+        .nav-back{display:inline-block;margin-bottom:8px}
+    </style>
+</head>
+<body>
+<a class="nav-back" href="index.html">← Volver</a>
+<div class="top">
+    <h1>Salida</h1>
+    <button onclick="exportCSV()" class="btn">Exportar CSV</button>
+</div>
+
+<input id="buscar" placeholder="Buscar matrícula..." style="width:100%;padding:8px;border-radius:8px;border:1px solid #ccc;margin-bottom:8px"/>
+
+<table id="tabla">
+    <thead><tr><th>Matrícula</th><th>Ingreso</th><th>Tarifa</th><th>Acción</th></tr></thead>
+    <tbody></tbody>
+</table>
+
+<!-- Modal personalizado -->
+<div id="modal" class="modal" style="display:none">
+    <div class="modal-content">
+        <p id="modal-text">Retirar ?</p>
+        <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:12px">
+            <button id="modal-no" class="btn">NO</button>
+            <button id="modal-si" class="btn btn-danger">SI</button>
+        </div>
+    </div>
+</div>
+
+<script src="https://unpkg.com/dexie@latest/dist/dexie.min.js"></script>
+<script>
+    const db = new Dexie("CocheraDB");
+    db.version(1).stores({ cobros: "++id, matricula, tarifa, fechaIngreso" });
+
+    if (navigator.storage && navigator.storage.persist) navigator.storage.persist().then(()=>{});
+
+    const tbody = document.querySelector('#tabla tbody');
+    const buscar = document.getElementById('buscar');
+    let rows = [];
+    let eliminarId = null;
+
+    async function cargar() {
+        const all = await db.cobros.orderBy('fechaIngreso').reverse().toArray();
+        rows = all;
+        render(rows);
+    }
+
+    function render(list){
+        tbody.innerHTML = '';
+        if(list.length===0){ tbody.innerHTML = '<tr><td colspan="4">No hay registros</td></tr>'; return; }
+        list.forEach(r=>{
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+          <td>${r.matricula}</td>
+          <td>${new Date(r.fechaIngreso).toLocaleString()}</td>
+          <td>${r.tarifa}</td>
+          <td><button class="btn btn-danger" onclick="confirmRetirar(${r.id}, '${r.matricula.replace("'", "\\'")}')">RETIRAR</button></td>
+        `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    function confirmRetirar(id, matricula){
+        eliminarId = id;
+        document.getElementById('modal-text').textContent = `Retirar ${matricula}?`;
+        document.getElementById('modal').style.display = 'flex';
+    }
+
+    document.getElementById('modal-no').addEventListener('click', ()=> {
+        eliminarId = null;
+        document.getElementById('modal').style.display = 'none';
+    });
+
+    document.getElementById('modal-si').addEventListener('click', async ()=> {
+        if(eliminarId !== null){
+            await db.cobros.delete(eliminarId);
+            document.getElementById('modal').style.display = 'none';
+            eliminarId = null;
+            await cargar();
+        }
+    });
+
+    buscar.addEventListener('input', () => {
+        const q = buscar.value.trim().toLowerCase();
+        if(!q) return render(rows);
+        render(rows.filter(r=> r.matricula.toLowerCase().includes(q)));
+    });
+
+    // Export CSV simple
+    async function exportCSV(){
+        const arr = await db.cobros.toArray();
+        const cols = ['matricula','fechaIngreso','tarifa'];
+        const csv = [cols.join(',')].concat(arr.map(r =>
+            `"${r.matricula}","${r.fechaIngreso}","${r.tarifa}"`
+        )).join('\n');
+        const blob = new Blob([csv], {type:'text/csv'});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = 'cobros.csv'; a.click();
+        URL.revokeObjectURL(url);
+    }
+
+    // register sw
+    if('serviceWorker' in navigator) navigator.serviceWorker.register('./service-worker.js').catch(()=>{});
+
+    cargar();
+</script>
+</body>
+</html>
