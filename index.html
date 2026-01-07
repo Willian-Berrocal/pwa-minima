@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>PWA mínima</title>
+
+  <!-- Manifest -->
+  <link rel="manifest" href="manifest.json" />
+
+</head>
+<body>
+  <h1>PWA mínima 🚗</h1>
+  <p>Funciona offline y se puede instalar</p>
+
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('service-worker.js')
+        .then(() => console.log('Service Worker registrado'))
+        .catch(err => console.error('Error:', err));
+    }
+  </script>
+</body>
+</html>
