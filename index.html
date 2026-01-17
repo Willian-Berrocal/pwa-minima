@@ -11,8 +11,7 @@
 
 <header>
   <div>
-    <h1>Cochera — Ingreso / Salida</h1>
-    <div class="small">Una sola pantalla: registrar y retirar desde el mismo campo</div>
+    <h1>Cochera</h1>
   </div>
   <div class="top-actions">
     <button id="exportBtn" class="big-btn muted" title="Exportar CSV">Exportar</button>
@@ -41,13 +40,17 @@
       <button type="button" class="quick-btn" data-tarifa="tarifa3">Tarifa 3</button>
     </div>
 
+    <div style="height:8px"></div>
+
+    <label for="adelanto">Adelanto (S/)</label>
+    <input id="adelanto" name="adelanto" type="number" inputmode="decimal"
+           min="0" step="0.01" placeholder="0.00" />
+
     <div style="height:10px"></div>
 
     <div class="row">
       <button id="guardarBtn" class="big-btn primary" type="submit">Guardar ingreso</button>
     </div>
-
-    <div class="hint">Usa el mismo campo Matrícula para registrar o para buscar en la lista.</div>
   </form>
 </div>
 

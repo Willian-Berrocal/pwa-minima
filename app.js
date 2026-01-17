@@ -27,6 +27,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const form = document.getElementById('formIngreso');
     const matriculaInput = document.getElementById('matricula');
     const tarifaSelect = document.getElementById('tarifa');
+    const adelantoInput = document.getElementById('adelanto');
     const tablaBody = document.querySelector('#tabla tbody');
     const exportBtn = document.getElementById('exportBtn');
     const modal = document.getElementById('modal');
@@ -72,6 +73,15 @@ document.addEventListener('DOMContentLoaded', () => {
      */
     function normalizeMatricula(s) {
         return s ? s.trim().toUpperCase() : '';
+    }
+
+    /**
+     * formatCurrency(valor)
+     * Recibe número (o string numérico) y devuelve con 2 decimales.
+     */
+    function formatCurrency(valor) {
+        const n = Number(valor) || 0;
+        return n.toFixed(2);
     }
 
     /**
@@ -134,17 +144,32 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!matricula) { showToast('Ingrese matrícula', 'warn'); matriculaInput.focus(); return; }
         const tarifa = tarifaSelect.value;
 
+        // LEER ADELANTO (opcional). Si está vacío o inválido, queda 0.
+        const adelantoVal = adelantoInput.value;
+        const adelanto = adelantoVal === '' ? 0 : (Number(adelantoVal) || 0);
+
         try {
-            await db.cobros.add({ matricula, tarifa, fechaIngreso: new Date().toISOString() });
+            // Guardar ingreso con campo 'adelanto'
+            await db.cobros.add({
+                matricula,
+                tarifa,
+                fechaIngreso: new Date().toISOString(),
+                adelanto // propiedad extra en el registro (opcional)
+            });
             showToast(`Ingreso registrado: ${matricula}`, 'success');
+
+            // Limpiar campos para agilizar siguiente operación
             matriculaInput.value = '';
+            adelantoInput.value = '';   // <-- limpiamos adelanto también
             matriculaInput.focus();
+
             await cargarYRenderizar();
         } catch (err) {
             console.error(err);
             showToast('Error al guardar', 'error');
         }
     });
+
 
     /* ===================== BOTONES RÁPIDOS DE TARIFA ===================== */
 
@@ -173,9 +198,23 @@ document.addEventListener('DOMContentLoaded', () => {
      * Abre modal para confirmar eliminación del registro con id.
      * Esta función se expone globalmente para ser llamada desde el HTML generado por render().
      */
-    window.confirmRetirar = function(id, matricula) {
+    window.confirmRetirar = async function(id, matricula) {
         pendienteEliminarId = id;
-        modalText.textContent = `Retirar ${matricula}?`;
+
+        // Obtener el registro completo para leer 'adelanto'
+        const record = await db.cobros.get(id);
+        const adel = record && record.adelanto ? formatCurrency(record.adelanto) : null;
+
+        // Construir contenido del modal: primera línea mensaje, segunda línea Adelanto (si existe)
+        if (adel && Number(adel) > 0) {
+            modalText.innerHTML = `
+      <div>Retirar ${matricula}?</div>
+      <div style="margin-top:8px">Adelanto: S/ ${adel}</div>
+    `;
+        } else {
+            modalText.innerHTML = `<div>Retirar ${matricula}?</div>`;
+        }
+
         modal.style.display = 'flex';
         modal.setAttribute('aria-hidden', 'false');
     };
@@ -195,6 +234,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 pendienteEliminarId = null;
                 modal.style.display = 'none';
                 modal.setAttribute('aria-hidden', 'true');
+                matriculaInput.value = '';
+                adelantoInput.value = '';
+                matriculaInput.focus();
                 showToast('Registro eliminado', 'info');
                 await cargarYRenderizar();
             } catch (err) {
