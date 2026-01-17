@@ -1,10 +1,10 @@
-const CACHE_NAME = "pwa-cache-v2";
+const CACHE_NAME = "pwa-cache-v4";
 const FILES_TO_CACHE = [
   "./",
   "./index.html",
-  "./ingreso.html",
-  "./salida.html",
   "./manifest.json",
+  "./styles.css",
+  "./app.js",
   "./icon.png"
 ];
 

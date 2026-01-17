@@ -3,32 +3,78 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Cochera — Menú</title>
+  <title>Cochera — Ingreso / Salida</title>
   <link rel="manifest" href="manifest.json" />
-  <style>
-    body { font-family: sans-serif; display:flex; flex-direction:column; align-items:center; gap:20px; padding:40px; }
-    h1{margin-top:10px}
-    .big-btn {
-      display:block; width:260px; height:64px; font-size:20px;
-      border-radius:10px; border:none; cursor:pointer;
-      background:#2c3e50; color:#fff;
-      box-shadow: 0 4px 8px rgba(0,0,0,0.15);
-    }
-    .nav-small { position:fixed; left:12px; top:12px; font-size:18px; }
-  </style>
+  <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-<h1>Cochera</h1>
-<p>Elige una acción</p>
 
-<a href="ingreso.html"><button class="big-btn">➡️ Ingreso</button></a>
-<a href="salida.html"><button class="big-btn">⬅️ Salida</button></a>
+<header>
+  <div>
+    <h1>Cochera — Ingreso / Salida</h1>
+    <div class="small">Una sola pantalla: registrar y retirar desde el mismo campo</div>
+  </div>
+  <div class="top-actions">
+    <button id="exportBtn" class="big-btn muted" title="Exportar CSV">Exportar</button>
+  </div>
+</header>
 
-<script>
-  // Service Worker registration
-  if('serviceWorker' in navigator){
-    navigator.serviceWorker.register('./service-worker.js').catch(e => console.error(e));
-  }
-</script>
+<!-- FORM (campo único de matrícula) -->
+<div class="card">
+  <form id="formIngreso" autocomplete="off">
+    <label for="matricula">Matrícula</label>
+    <input id="matricula" name="matricula" type="text" inputmode="latin"
+           autocomplete="off" placeholder="Ej: ABC123" required minlength="2" />
+
+    <div style="height:8px"></div>
+
+    <label for="tarifa">Tarifa</label>
+    <select id="tarifa" name="tarifa">
+      <option value="tarifa1">Tarifa 1</option>
+      <option value="tarifa2">Tarifa 2</option>
+      <option value="tarifa3">Tarifa 3</option>
+    </select>
+
+    <div class="quick">
+      <button type="button" class="quick-btn" data-tarifa="tarifa1">Tarifa 1</button>
+      <button type="button" class="quick-btn" data-tarifa="tarifa2">Tarifa 2</button>
+      <button type="button" class="quick-btn" data-tarifa="tarifa3">Tarifa 3</button>
+    </div>
+
+    <div style="height:10px"></div>
+
+    <div class="row">
+      <button id="guardarBtn" class="big-btn primary" type="submit">Guardar ingreso</button>
+    </div>
+
+    <div class="hint">Usa el mismo campo Matrícula para registrar o para buscar en la lista.</div>
+  </form>
+</div>
+
+<!-- TABLA (sin campo de filtro separado) -->
+<div class="card" style="margin-bottom:120px">
+  <table id="tabla" aria-live="polite">
+    <thead><tr><th>Matrícula</th><th>Ingreso</th><th>Tarifa</th><th>Acción</th></tr></thead>
+    <tbody></tbody>
+  </table>
+</div>
+
+<!-- MODAL -->
+<div id="modal" aria-hidden="true">
+  <div class="modal-box">
+    <p id="modal-text">Retirar ?</p>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
+      <button id="modal-no" class="big-btn muted" style="width:110px">NO</button>
+      <button id="modal-si" class="big-btn danger" style="width:110px">SI</button>
+    </div>
+  </div>
+</div>
+
+<!-- CONTAINER PARA TOASTS -->
+<div id="toast-container" aria-live="polite" aria-atomic="true"></div>
+
+<!-- Dexie (CDN) y aplicación -->
+<script src="https://unpkg.com/dexie@latest/dist/dexie.min.js"></script>
+<script src="app.js"></script>
 </body>
 </html>
