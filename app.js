@@ -1,4 +1,4 @@
-/* ===================== PWA Cochera - app.js (Fase 1: Tarifas reales) ===================== */
+/* ===================== PWA Cochera - app.js (Fase 1: Tarifas reales + Fase 2: Cálculo total/deuda) ===================== */
 /* Lógica de la aplicación: DB (Dexie), UI, eventos y toasts.
    Comentarios explicativos en cada función. */
 
@@ -186,23 +186,122 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    /* ===================== MODAL DE CONFIRMACIÓN PARA RETIRAR ===================== */
+    /* ===================== FUNCION DE CÁLCULO (NUEVA) ===================== */
+
+    /**
+     * calcularCobro(record, fechaSalida)
+     * Devuelve un número: total a cobrar según reglas establecidas por Lian.
+     */
+    function calcularCobro(record, fechaSalida) {
+        // Asegurar tarifas disponibles
+        const tarifaDia = (typeof record.tarifaDia !== 'undefined') ? Number(record.tarifaDia) : (TARIFAS[record.tarifa] ? TARIFAS[record.tarifa].dia : 0);
+        const tarifaNoche = (typeof record.tarifaNoche !== 'undefined') ? Number(record.tarifaNoche) : (TARIFAS[record.tarifa] ? TARIFAS[record.tarifa].noche : 0);
+
+        const entrada = new Date(record.fechaIngreso);
+        const salida = new Date(fechaSalida); // puede ser Date o string
+
+        // Si por alguna razón la salida es anterior a la entrada, devolver 0
+        if (salida <= entrada) return 0;
+
+        // misma fecha (mismo día calendario)
+        const entradaDateStr = entrada.toDateString();
+        const salidaDateStr = salida.toDateString();
+
+        if (entradaDateStr === salidaDateStr) {
+            const diffMs = salida - entrada;
+            const diffHoras = diffMs / (1000*60*60);
+
+            if (diffHoras < 1) return 0;
+            if (diffHoras < 5) return Math.max(0, tarifaDia - 1);
+            return tarifaDia;
+        }
+
+        // fechas distintas -> calculo por partes
+        let total = 0;
+
+        // --- Día de entrada ---
+        const entradaMinutes = entrada.getHours()*60 + entrada.getMinutes();
+        const MIN_12_30 = 12*60 + 30; // 750
+        const MIN_15_30 = 15*60 + 30; // 930
+
+        if (entradaMinutes >= MIN_15_30) {
+            // no paga por ese día
+            total += 0;
+        } else if (entradaMinutes > MIN_12_30 && entradaMinutes < MIN_15_30) {
+            // paga mitad de tarifa día
+            total += tarifaDia / 2;
+        } else {
+            // antes de 12:30 -> paga día completo
+            total += tarifaDia;
+        }
+
+        // --- Contar medianoches y días completos entre fechas ---
+        // midnightsPassed = number of times we pass from 00:00 of a day to the next (i.e., difference in date midnight)
+        const startMidnight = new Date(entrada);
+        startMidnight.setHours(0,0,0,0);
+        const endMidnight = new Date(salida);
+        endMidnight.setHours(0,0,0,0);
+
+        let midnightsPassed = Math.round((endMidnight - startMidnight) / (24*60*60*1000));
+        if (midnightsPassed < 0) midnightsPassed = 0;
+
+        // Por cada medianoche que pasa se adiciona tarifa noche completa
+        total += midnightsPassed * tarifaNoche;
+
+        // Por cada dia completo que el vehiculo pasa en la cochera, se adiciona tarifa dia completa
+        // Los "días completos" son (medianoche count - 1). Ej: si pasa 4 medianoches -> 3 días completos intermedios.
+        const diasCompletos = Math.max(0, midnightsPassed - 1);
+        total += diasCompletos * tarifaDia;
+
+        // --- Día de salida ---
+        const salidaMinutes = salida.getHours()*60 + salida.getMinutes();
+        const MIN_11_30 = 11*60 + 30; // 690
+
+        if (salidaMinutes < MIN_11_30) {
+            total += 0;
+        } else if (salidaMinutes >= MIN_11_30 && salidaMinutes < MIN_15_30) {
+            total += Math.max(0, tarifaDia - 1);
+        } else {
+            total += tarifaDia;
+        }
+
+        // Nota: las reglas anteriores ya contemplan la combinación tal como en el ejemplo (lunes 4pm -> viernes 9am)
+        // Devolver número con decimales (no formateado)
+        return Number((total).toFixed(2));
+    }
+
+    /* ===================== MODAL DE CONFIRMACIÓN PARA RETIRAR (MODIFICADA) ===================== */
 
     window.confirmRetirar = async function(id, matricula) {
         pendienteEliminarId = id;
 
-        // Obtener el registro completo para leer 'adelanto'
+        // Obtener el registro completo para leer 'adelanto' y tarifas
         const record = await db.cobros.get(id);
-        const adel = record && record.adelanto ? formatCurrency(record.adelanto) : null;
-
-        if (adel && Number(adel) > 0) {
-            modalText.innerHTML = `
-      <div>Retirar ${matricula}?</div>
-      <div style="margin-top:8px">Adelanto: S/ ${adel}</div>
-    `;
-        } else {
-            modalText.innerHTML = `<div>Retirar ${matricula}?</div>`;
+        if (!record) {
+            showToast('Registro no encontrado', 'error');
+            return;
         }
+
+        // Tomamos la fecha/hora de salida EN ESTE MOMENTO (tal como especificaste)
+        const fechaSalida = new Date();
+
+        // Calcular total según reglas
+        const totalCalc = calcularCobro(record, fechaSalida);
+        const adel = record && record.adelanto ? Number(record.adelanto) : 0;
+        const debe = Math.max(0, Number((totalCalc - adel).toFixed(2)));
+
+        // Formatear para mostrar en modal
+        const adelStr = `S/ ${formatCurrency(adel)}`;
+        const totalStr = `S/ ${formatCurrency(totalCalc)}`;
+        const debeStr = `S/ ${formatCurrency(debe)}`;
+
+        // Construir contenido del modal con adelanto, total y debe (Debe en <strong>)
+        modalText.innerHTML = `
+      <div>Retirar ${matricula}?</div>
+      <div style="margin-top:8px">Adelanto: ${adelStr}</div>
+      <div>Total: ${totalStr}</div>
+      <div style="margin-top:6px"><strong>Debe: ${debeStr}</strong></div>
+    `;
 
         modal.style.display = 'flex';
         modal.setAttribute('aria-hidden', 'false');
@@ -267,6 +366,3 @@ document.addEventListener('DOMContentLoaded', () => {
     cargarYRenderizar();
 
 }); // DOMContentLoaded end
-
-
-
