@@ -1,4 +1,4 @@
-/* ===================== PWA Cochera - app.js ===================== */
+/* ===================== PWA Cochera - app.js (Fase 1: Tarifas reales) ===================== */
 /* Lógica de la aplicación: DB (Dexie), UI, eventos y toasts.
    Comentarios explicativos en cada función. */
 
@@ -40,26 +40,30 @@ document.addEventListener('DOMContentLoaded', () => {
     let rowsCache = [];
     let pendienteEliminarId = null;
 
+    /* =========== NUEVO: tabla de tarifas predefinidas =========== */
+    const TARIFAS = {
+        auto_viejo: { label: 'Auto viejo', dia: 5, noche: 7 },
+        auto_nuevo: { label: 'Auto nuevo', dia: 6, noche: 8 },
+        mototaxi: { label: 'Mototaxi', dia: 2, noche: 4 },
+        moto_lineal: { label: 'Moto lineal', dia: 2, noche: 3 },
+        triciclo: { label: 'Triciclo', dia: 1, noche: 4 },
+        afilador: { label: 'Afilador', dia: 1, noche: 2 },
+        camion: { label: 'Camión', dia: 7, noche: 12 },
+        bicicleta: { label: 'Bicicleta', dia: 1, noche: 2 }
+    };
+
     /* ===================== TOASTS ===================== */
 
-    /**
-     * showToast(message, type, duration)
-     * Muestra un toast no bloqueante.
-     * type: 'success' | 'info' | 'warn' | 'error'
-     * duration en ms (por defecto 2500)
-     */
     function showToast(message, type = 'info', duration = 2500) {
         const t = document.createElement('div');
         t.className = `toast ${type}`;
         t.innerHTML = `<div>${message}</div><button class="close" aria-label="cerrar">&times;</button>`;
         toastContainer.appendChild(t);
 
-        // Cerrar con botón
         t.querySelector('.close').addEventListener('click', () => {
             t.remove();
         });
 
-        // Auto-dismiss
         setTimeout(() => {
             t.remove();
         }, duration);
@@ -67,27 +71,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     /* ===================== HELPERS de UI/DB ===================== */
 
-    /**
-     * normalizeMatricula(s)
-     * Normaliza matrícula: trim + uppercase
-     */
     function normalizeMatricula(s) {
         return s ? s.trim().toUpperCase() : '';
     }
 
-    /**
-     * formatCurrency(valor)
-     * Recibe número (o string numérico) y devuelve con 2 decimales.
-     */
     function formatCurrency(valor) {
         const n = Number(valor) || 0;
         return n.toFixed(2);
     }
 
-    /**
-     * render(list)
-     * Dibuja la tabla con los registros proporcionados.
-     */
     function render(list) {
         tablaBody.innerHTML = '';
         if (!list.length) {
@@ -95,11 +87,18 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         for (const r of list) {
+            const tarifaLabel = r.tarifaLabel || (TARIFAS[r.tarifa] && TARIFAS[r.tarifa].label) || r.tarifa;
+            const diaVal = (typeof r.tarifaDia !== 'undefined') ? formatCurrency(r.tarifaDia) : '';
+            const nocheVal = (typeof r.tarifaNoche !== 'undefined') ? formatCurrency(r.tarifaNoche) : '';
+
             const tr = document.createElement('tr');
             tr.innerHTML = `
         <td>${r.matricula}</td>
         <td>${new Date(r.fechaIngreso).toLocaleString()}</td>
-        <td>${r.tarifa}</td>
+        <td>
+          <div>${tarifaLabel}</div>
+          <div class="small">D: S/ ${diaVal} | N: S/ ${nocheVal}</div>
+        </td>
         <td><button class="big-btn" style="padding:6px 8px" onclick="confirmRetirar(${r.id}, '${r.matricula.replace("'", "\\'")}')">RETIRAR</button></td>
       `;
             tablaBody.appendChild(tr);
@@ -108,20 +107,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     /* ===================== CARGA Y FILTRADO ===================== */
 
-    /**
-     * cargarYRenderizar()
-     * Obtiene todos los registros ordenados por fecha (desc) y renderiza aplicando filtro.
-     */
     async function cargarYRenderizar() {
         const all = await db.cobros.orderBy('fechaIngreso').reverse().toArray();
         rowsCache = all;
         aplicarFiltro();
     }
 
-    /**
-     * aplicarFiltro()
-     * Filtra rowsCache usando el campo de matrícula (arriba). Si vacío, muestra todo.
-     */
     function aplicarFiltro() {
         const q = normalizeMatricula(matriculaInput.value);
         if (!q) {
@@ -134,25 +125,33 @@ document.addEventListener('DOMContentLoaded', () => {
 
     /* ===================== INGRESO (SUBMIT) ===================== */
 
-    /**
-     * Maneja el submit del formulario: guarda un nuevo registro con timestamp.
-     */
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
         const raw = matriculaInput.value;
         const matricula = normalizeMatricula(raw);
         if (!matricula) { showToast('Ingrese matrícula', 'warn'); matriculaInput.focus(); return; }
-        const tarifa = tarifaSelect.value;
+        const tarifaKey = tarifaSelect.value;
 
         // LEER ADELANTO (opcional). Si está vacío o inválido, queda 0.
         const adelantoVal = adelantoInput.value;
         const adelanto = adelantoVal === '' ? 0 : (Number(adelantoVal) || 0);
 
+        // Determinar tarifas día/noche según selección
+        let tarifaDia = 0, tarifaNoche = 0, tarifaLabel = '';
+
+        const t = TARIFAS[tarifaKey];
+        tarifaDia = t ? t.dia : 0;
+        tarifaNoche = t ? t.noche : 0;
+        tarifaLabel = t ? t.label : tarifaKey;
+
         try {
-            // Guardar ingreso con campo 'adelanto'
+            // Guardar ingreso con campos de tarifa dia/noche y etiqueta
             await db.cobros.add({
                 matricula,
-                tarifa,
+                tarifa: tarifaKey,
+                tarifaLabel,
+                tarifaDia,
+                tarifaNoche,
                 fechaIngreso: new Date().toISOString(),
                 adelanto // propiedad extra en el registro (opcional)
             });
@@ -160,7 +159,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Limpiar campos para agilizar siguiente operación
             matriculaInput.value = '';
-            adelantoInput.value = '';   // <-- limpiamos adelanto también
+            adelantoInput.value = '';
+            tarifaSelect.value = 'auto_viejo';
             matriculaInput.focus();
 
             await cargarYRenderizar();
@@ -170,20 +170,15 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-
     /* ===================== BOTONES RÁPIDOS DE TARIFA ===================== */
 
-    /**
-     * setTarifa(t)
-     * Establece el select de tarifa. Llamado por los botones rápidos.
-     */
     function setTarifa(t) {
         tarifaSelect.value = t;
         matriculaInput.focus();
-        showToast(`Tarifa ${t.replace('tarifa','')} seleccionada`, 'info', 1200);
+        const label = TARIFAS[t] ? TARIFAS[t].label : t;
+        showToast(`${label} seleccionada`, 'info', 1200);
     }
 
-    // Añadimos listeners a los botones rápidos UNA VEZ que el DOM está listo
     document.querySelectorAll('.quick-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             const tarifa = btn.dataset.tarifa;
@@ -193,11 +188,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     /* ===================== MODAL DE CONFIRMACIÓN PARA RETIRAR ===================== */
 
-    /**
-     * confirmRetirar(id, matricula)
-     * Abre modal para confirmar eliminación del registro con id.
-     * Esta función se expone globalmente para ser llamada desde el HTML generado por render().
-     */
     window.confirmRetirar = async function(id, matricula) {
         pendienteEliminarId = id;
 
@@ -205,7 +195,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const record = await db.cobros.get(id);
         const adel = record && record.adelanto ? formatCurrency(record.adelanto) : null;
 
-        // Construir contenido del modal: primera línea mensaje, segunda línea Adelanto (si existe)
         if (adel && Number(adel) > 0) {
             modalText.innerHTML = `
       <div>Retirar ${matricula}?</div>
@@ -219,14 +208,12 @@ document.addEventListener('DOMContentLoaded', () => {
         modal.setAttribute('aria-hidden', 'false');
     };
 
-    // Cerrar modal sin acción
     modalNo.addEventListener('click', () => {
         pendienteEliminarId = null;
         modal.style.display = 'none';
         modal.setAttribute('aria-hidden', 'true');
     });
 
-    // Confirmar y eliminar el registro seleccionado
     modalSi.addEventListener('click', async () => {
         if (pendienteEliminarId != null) {
             try {
@@ -248,7 +235,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     /* ===================== INPUTS: mayúsculas y filtrado en vivo ===================== */
 
-    // Mientras el usuario escribe en el campo matrícula: uppercase y filtrar la tabla
     matriculaInput.addEventListener('input', () => {
         const pos = matriculaInput.selectionStart;
         matriculaInput.value = matriculaInput.value.toUpperCase();
@@ -256,14 +242,14 @@ document.addEventListener('DOMContentLoaded', () => {
         aplicarFiltro();
     });
 
-    /* ===================== EXPORT CSV ===================== */
+    /* ===================== EXPORT CSV (sin cambios en esta fase) ===================== */
 
     exportBtn.addEventListener('click', async () => {
         try {
             const arr = await db.cobros.orderBy('fechaIngreso').reverse().toArray();
-            const cols = ['matricula','fechaIngreso','tarifa'];
+            const cols = ['matricula','fechaIngreso','tarifa','tarifaLabel','tarifaDia','tarifaNoche','adelanto'];
             const csv = [cols.join(',')].concat(arr.map(r =>
-                `"${r.matricula}","${r.fechaIngreso}","${r.tarifa}"`
+                `"${r.matricula}","${r.fechaIngreso}","${r.tarifa}","${(r.tarifaLabel||'')}","${(typeof r.tarifaDia!=='undefined'?r.tarifaDia:'')}","${(typeof r.tarifaNoche!=='undefined'?r.tarifaNoche:'')}","${(r.adelanto||0)}"`
             )).join('\n');
             const blob = new Blob([csv], {type:'text/csv'});
             const url = URL.createObjectURL(blob);
@@ -281,3 +267,6 @@ document.addEventListener('DOMContentLoaded', () => {
     cargarYRenderizar();
 
 }); // DOMContentLoaded end
+
+
+
