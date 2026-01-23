@@ -1,17 +1,21 @@
-/* ===================== PWA Cochera - app.js (Fase 1: Tarifas reales + Fase 2: Cálculo total/deuda) ===================== */
-/* Lógica de la aplicación: DB (Dexie), UI, eventos y toasts.
-   Comentarios explicativos en cada función. */
+/* ===================== PWA Cochera - app.js (Fase 1: Tarifas reales + Fase 2: Cálculo + Fase 3: Export desde 'retiros') ===================== */
 
 document.addEventListener('DOMContentLoaded', () => {
 
     /* ---------- DB setup (Dexie) ---------- */
-    // Creamos la base de datos 'CocheraDB' con la tabla 'cobros'
     const db = new Dexie("CocheraDB");
+
+    // Versión inicial con 'cobros' y nueva versión que añade 'retiros'.
+    // Si la DB ya existía con v1, Dexie migrará a v2 al actualizar.
     db.version(1).stores({
         cobros: "++id, matricula, tarifa, fechaIngreso"
     });
+    db.version(2).stores({
+        cobros: "++id, matricula, tarifa, fechaIngreso",
+        // tabla 'retiros' para almacenar los retiros que luego se exportan
+        retiros: "++id, matricula, tarifa, fechaIngreso, fechaSalida, totalPago"
+    });
 
-    // Pedimos persistencia al navegador (reduce la probabilidad de borrado automático)
     if (navigator.storage && navigator.storage.persist) {
         navigator.storage.persist().then(p => console.log("persistencia:", p));
     }
@@ -36,11 +40,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const modalSi = document.getElementById('modal-si');
     const toastContainer = document.getElementById('toast-container');
 
-    /* Caché en memoria para acelerar render */
     let rowsCache = [];
     let pendienteEliminarId = null;
 
-    /* =========== NUEVO: tabla de tarifas predefinidas =========== */
+    // NUEVO: objeto temporal que contiene los datos calculados para el retiro
+    let pendingRetiro = null;
+
     const TARIFAS = {
         auto_viejo: { label: 'Auto viejo', dia: 5, noche: 7 },
         auto_nuevo: { label: 'Auto nuevo', dia: 6, noche: 8 },
@@ -132,20 +137,16 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!matricula) { showToast('Ingrese matrícula', 'warn'); matriculaInput.focus(); return; }
         const tarifaKey = tarifaSelect.value;
 
-        // LEER ADELANTO (opcional). Si está vacío o inválido, queda 0.
         const adelantoVal = adelantoInput.value;
         const adelanto = adelantoVal === '' ? 0 : (Number(adelantoVal) || 0);
 
-        // Determinar tarifas día/noche según selección
         let tarifaDia = 0, tarifaNoche = 0, tarifaLabel = '';
-
         const t = TARIFAS[tarifaKey];
         tarifaDia = t ? t.dia : 0;
         tarifaNoche = t ? t.noche : 0;
         tarifaLabel = t ? t.label : tarifaKey;
 
         try {
-            // Guardar ingreso con campos de tarifa dia/noche y etiqueta
             await db.cobros.add({
                 matricula,
                 tarifa: tarifaKey,
@@ -153,11 +154,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 tarifaDia,
                 tarifaNoche,
                 fechaIngreso: new Date().toISOString(),
-                adelanto // propiedad extra en el registro (opcional)
+                adelanto
             });
             showToast(`Ingreso registrado: ${matricula}`, 'success');
 
-            // Limpiar campos para agilizar siguiente operación
             matriculaInput.value = '';
             adelantoInput.value = '';
             tarifaSelect.value = 'auto_viejo';
@@ -186,24 +186,17 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    /* ===================== FUNCION DE CÁLCULO (NUEVA) ===================== */
+    /* ===================== FUNCION DE CÁLCULO (YA IMPLEMENTADA) ===================== */
 
-    /**
-     * calcularCobro(record, fechaSalida)
-     * Devuelve un número: total a cobrar según reglas establecidas por Lian.
-     */
     function calcularCobro(record, fechaSalida) {
-        // Asegurar tarifas disponibles
         const tarifaDia = (typeof record.tarifaDia !== 'undefined') ? Number(record.tarifaDia) : (TARIFAS[record.tarifa] ? TARIFAS[record.tarifa].dia : 0);
         const tarifaNoche = (typeof record.tarifaNoche !== 'undefined') ? Number(record.tarifaNoche) : (TARIFAS[record.tarifa] ? TARIFAS[record.tarifa].noche : 0);
 
         const entrada = new Date(record.fechaIngreso);
-        const salida = new Date(fechaSalida); // puede ser Date o string
+        const salida = new Date(fechaSalida);
 
-        // Si por alguna razón la salida es anterior a la entrada, devolver 0
         if (salida <= entrada) return 0;
 
-        // misma fecha (mismo día calendario)
         const entradaDateStr = entrada.toDateString();
         const salidaDateStr = salida.toDateString();
 
@@ -216,27 +209,20 @@ document.addEventListener('DOMContentLoaded', () => {
             return tarifaDia;
         }
 
-        // fechas distintas -> calculo por partes
         let total = 0;
 
-        // --- Día de entrada ---
         const entradaMinutes = entrada.getHours()*60 + entrada.getMinutes();
         const MIN_12_30 = 12*60 + 30; // 750
         const MIN_15_30 = 15*60 + 30; // 930
 
         if (entradaMinutes >= MIN_15_30) {
-            // no paga por ese día
             total += 0;
         } else if (entradaMinutes > MIN_12_30 && entradaMinutes < MIN_15_30) {
-            // paga mitad de tarifa día
             total += tarifaDia / 2;
         } else {
-            // antes de 12:30 -> paga día completo
             total += tarifaDia;
         }
 
-        // --- Contar medianoches y días completos entre fechas ---
-        // midnightsPassed = number of times we pass from 00:00 of a day to the next (i.e., difference in date midnight)
         const startMidnight = new Date(entrada);
         startMidnight.setHours(0,0,0,0);
         const endMidnight = new Date(salida);
@@ -245,15 +231,11 @@ document.addEventListener('DOMContentLoaded', () => {
         let midnightsPassed = Math.round((endMidnight - startMidnight) / (24*60*60*1000));
         if (midnightsPassed < 0) midnightsPassed = 0;
 
-        // Por cada medianoche que pasa se adiciona tarifa noche completa
         total += midnightsPassed * tarifaNoche;
 
-        // Por cada dia completo que el vehiculo pasa en la cochera, se adiciona tarifa dia completa
-        // Los "días completos" son (medianoche count - 1). Ej: si pasa 4 medianoches -> 3 días completos intermedios.
         const diasCompletos = Math.max(0, midnightsPassed - 1);
         total += diasCompletos * tarifaDia;
 
-        // --- Día de salida ---
         const salidaMinutes = salida.getHours()*60 + salida.getMinutes();
         const MIN_11_30 = 11*60 + 30; // 690
 
@@ -265,8 +247,6 @@ document.addEventListener('DOMContentLoaded', () => {
             total += tarifaDia;
         }
 
-        // Nota: las reglas anteriores ya contemplan la combinación tal como en el ejemplo (lunes 4pm -> viernes 9am)
-        // Devolver número con decimales (no formateado)
         return Number((total).toFixed(2));
     }
 
@@ -275,27 +255,37 @@ document.addEventListener('DOMContentLoaded', () => {
     window.confirmRetirar = async function(id, matricula) {
         pendienteEliminarId = id;
 
-        // Obtener el registro completo para leer 'adelanto' y tarifas
+        // Obtener el registro completo
         const record = await db.cobros.get(id);
         if (!record) {
             showToast('Registro no encontrado', 'error');
             return;
         }
 
-        // Tomamos la fecha/hora de salida EN ESTE MOMENTO (tal como especificaste)
+        // Fecha de salida en el momento de presionar RETIRAR
         const fechaSalida = new Date();
 
-        // Calcular total según reglas
+        // Calcular total y deuda
         const totalCalc = calcularCobro(record, fechaSalida);
         const adel = record && record.adelanto ? Number(record.adelanto) : 0;
         const debe = Math.max(0, Number((totalCalc - adel).toFixed(2)));
 
-        // Formatear para mostrar en modal
+        // Guardamos en memoria para usar luego al confirmar (modalSi)
+        pendingRetiro = {
+            id,
+            matricula,
+            record,        // copia del registro original para poder guardarlo en 'retiros'
+            fechaSalida,   // Date
+            totalCalc,
+            adelanto: adel,
+            debe
+        };
+
+        // Mostrar en modal
         const adelStr = `S/ ${formatCurrency(adel)}`;
         const totalStr = `S/ ${formatCurrency(totalCalc)}`;
         const debeStr = `S/ ${formatCurrency(debe)}`;
 
-        // Construir contenido del modal con adelanto, total y debe (Debe en <strong>)
         modalText.innerHTML = `
       <div>Retirar ${matricula}?</div>
       <div style="margin-top:8px">Adelanto: ${adelStr}</div>
@@ -309,26 +299,56 @@ document.addEventListener('DOMContentLoaded', () => {
 
     modalNo.addEventListener('click', () => {
         pendienteEliminarId = null;
+        pendingRetiro = null;
         modal.style.display = 'none';
         modal.setAttribute('aria-hidden', 'true');
     });
 
     modalSi.addEventListener('click', async () => {
-        if (pendienteEliminarId != null) {
-            try {
-                await db.cobros.delete(pendienteEliminarId);
-                pendienteEliminarId = null;
-                modal.style.display = 'none';
-                modal.setAttribute('aria-hidden', 'true');
-                matriculaInput.value = '';
-                adelantoInput.value = '';
-                matriculaInput.focus();
-                showToast('Registro eliminado', 'info');
-                await cargarYRenderizar();
-            } catch (err) {
-                console.error(err);
-                showToast('Error al eliminar', 'error');
-            }
+        if (!pendingRetiro) {
+            showToast('No hay retiro pendiente', 'warn');
+            modal.style.display = 'none';
+            modal.setAttribute('aria-hidden', 'true');
+            return;
+        }
+
+        try {
+            const rec = pendingRetiro.record;
+            // Preparar objeto para insertar en 'retiros'
+            const nuevoRetiro = {
+                matricula: rec.matricula,
+                tarifa: rec.tarifa,
+                tarifaLabel: rec.tarifaLabel || (TARIFAS[rec.tarifa] && TARIFAS[rec.tarifa].label) || rec.tarifa,
+                tarifaDia: (typeof rec.tarifaDia !== 'undefined') ? rec.tarifaDia : (TARIFAS[rec.tarifa] ? TARIFAS[rec.tarifa].dia : 0),
+                tarifaNoche: (typeof rec.tarifaNoche !== 'undefined') ? rec.tarifaNoche : (TARIFAS[rec.tarifa] ? TARIFAS[rec.tarifa].noche : 0),
+                fechaIngreso: rec.fechaIngreso,
+                fechaSalida: pendingRetiro.fechaSalida.toISOString(),
+                adelanto: pendingRetiro.adelanto,
+                totalPago: pendingRetiro.totalCalc,
+                debe: pendingRetiro.debe
+            };
+
+            // Guardar en tabla 'retiros'
+            await db.retiros.add(nuevoRetiro);
+
+            // Borrar el registro original de 'cobros'
+            await db.cobros.delete(pendingRetiro.id);
+
+            // Limpiar variables y UI
+            pendienteEliminarId = null;
+            pendingRetiro = null;
+            modal.style.display = 'none';
+            modal.setAttribute('aria-hidden', 'true');
+            matriculaInput.value = '';
+            adelantoInput.value = '';
+            matriculaInput.focus();
+
+            showToast('Retiro guardado y registro eliminado', 'info');
+            await cargarYRenderizar();
+
+        } catch (err) {
+            console.error(err);
+            showToast('Error al procesar retiro', 'error');
         }
     });
 
@@ -341,24 +361,37 @@ document.addEventListener('DOMContentLoaded', () => {
         aplicarFiltro();
     });
 
-    /* ===================== EXPORT CSV (sin cambios en esta fase) ===================== */
+    /* ===================== EXPORT CSV (REINVENTADA: exporta desde 'retiros' y la vacía) ===================== */
 
     exportBtn.addEventListener('click', async () => {
         try {
-            const arr = await db.cobros.orderBy('fechaIngreso').reverse().toArray();
-            const cols = ['matricula','fechaIngreso','tarifa','tarifaLabel','tarifaDia','tarifaNoche','adelanto'];
+            const arr = await db.retiros.orderBy('fechaSalida').reverse().toArray();
+            if (!arr || arr.length === 0) {
+                showToast('No hay retiros para exportar', 'warn');
+                return;
+            }
+
+            const cols = ['matricula','fechaIngreso','fechaSalida','tarifa','tarifaLabel','tarifaDia','tarifaNoche','adelanto','totalPago','debe'];
             const csv = [cols.join(',')].concat(arr.map(r =>
-                `"${r.matricula}","${r.fechaIngreso}","${r.tarifa}","${(r.tarifaLabel||'')}","${(typeof r.tarifaDia!=='undefined'?r.tarifaDia:'')}","${(typeof r.tarifaNoche!=='undefined'?r.tarifaNoche:'')}","${(r.adelanto||0)}"`
+                `"${(r.matricula||'')}","${(r.fechaIngreso||'')}","${(r.fechaSalida||'')}","${(r.tarifa||'')}","${(r.tarifaLabel||'')}","${(typeof r.tarifaDia!=='undefined'?r.tarifaDia:'')}","${(typeof r.tarifaNoche!=='undefined'?r.tarifaNoche:'')}","${(r.adelanto||0)}","${(r.totalPago||0)}","${(r.debe||0)}"`
             )).join('\n');
+
             const blob = new Blob([csv], {type:'text/csv'});
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
-            a.href = url; a.download = 'cobros.csv'; a.click();
+            a.href = url;
+            a.download = 'retiros.csv';
+            a.click();
             URL.revokeObjectURL(url);
-            showToast('Exportado CSV', 'success');
+
+            // Una vez exportado, vaciamos la tabla de retiros
+            await db.retiros.clear();
+
+            showToast('Exportado CSV y base de retiros vaciada', 'success');
+
         } catch (err) {
             console.error(err);
-            showToast('Error exportando', 'error');
+            showToast('Error exportando retiros', 'error');
         }
     });
 
