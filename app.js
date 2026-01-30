@@ -1,12 +1,9 @@
-/* ===================== PWA Cochera - app.js (Fase 1: Tarifas reales + Fase 2: Cálculo + Fase 3: Export desde 'retiros') ===================== */
-
 document.addEventListener('DOMContentLoaded', () => {
 
-    /* ---------- DB setup (Dexie) ---------- */
+    // DB setup (Dexie)
     const db = new Dexie("CocheraDB");
 
-    // Versión inicial con 'cobros' y nueva versión que añade 'retiros'.
-    // Si la DB ya existía con v1, Dexie migrará a v2 al actualizar.
+    // Dos bases de datos: cobros (funcional) y retiros (exportacion de datos)
     db.version(1).stores({
         cobros: "++id, matricula, tarifa, fechaIngreso"
     });
@@ -15,19 +12,21 @@ document.addEventListener('DOMContentLoaded', () => {
         // tabla 'retiros' para almacenar los retiros que luego se exportan
         retiros: "++id, matricula, tarifa, fechaIngreso, fechaSalida, totalPago"
     });
+    // hay dos versiones ya que permite que los que usaban la primera version migren a la segunda sin problemas
 
+    // Pedir persistencia de la base de datos
     if (navigator.storage && navigator.storage.persist) {
         navigator.storage.persist().then(p => console.log("persistencia:", p));
     }
 
-    /* ---------- Service Worker registration ---------- */
+    // Registro del service worker
     if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('./service-worker.js')
             .then(()=>console.log('Service Worker registrado'))
             .catch(()=>console.log('Fallo registro de Service Worker'));
     }
 
-    /* ---------- Referencias al DOM ---------- */
+    // Referencias a los elementos de la interfaz
     const form = document.getElementById('formIngreso');
     const matriculaInput = document.getElementById('matricula');
     const tarifaSelect = document.getElementById('tarifa');
@@ -42,10 +41,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let rowsCache = [];
     let pendienteEliminarId = null;
-
-    // NUEVO: objeto temporal que contiene los datos calculados para el retiro
     let pendingRetiro = null;
 
+    // Tarifas
     const TARIFAS = {
         auto_viejo: { label: 'Auto viejo', dia: 5, noche: 7 },
         auto_nuevo: { label: 'Auto nuevo', dia: 6, noche: 8 },
@@ -53,12 +51,11 @@ document.addEventListener('DOMContentLoaded', () => {
         moto_lineal: { label: 'Moto lineal', dia: 2, noche: 3 },
         triciclo: { label: 'Triciclo', dia: 1, noche: 4 },
         afilador: { label: 'Afilador', dia: 1, noche: 2 },
-        camion: { label: 'Camión', dia: 7, noche: 12 },
+        camion: { label: 'Camion', dia: 7, noche: 12 },
         bicicleta: { label: 'Bicicleta', dia: 1, noche: 2 }
     };
 
-    /* ===================== TOASTS ===================== */
-
+    // Funcion para mostrar notificaciones no bloqueantes (Toasts)
     function showToast(message, type = 'info', duration = 2500) {
         const t = document.createElement('div');
         t.className = `toast ${type}`;
@@ -74,8 +71,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }, duration);
     }
 
-    /* ===================== HELPERS de UI/DB ===================== */
-
+    // Funciones auxiliares (matricula en MAYUS, dinero con dos decimales, fechas con mes escrito)
     function normalizeMatricula(s) {
         return s ? s.trim().toUpperCase() : '';
     }
@@ -85,6 +81,24 @@ document.addEventListener('DOMContentLoaded', () => {
         return n.toFixed(2);
     }
 
+    function formatDateShort(isoString) {
+        const d = new Date(isoString);
+        // Nombres de meses en español (minúsculas como pediste)
+        const months = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','setiembre','octubre','noviembre','diciembre'];
+        const day = d.getDate();
+        const monthName = months[d.getMonth()] || '';
+        // Hora en formato 12h sin segundos y AM/PM en mayúsculas sin espacio (ej: 12:37PM)
+        let hours = d.getHours();
+        const minutes = d.getMinutes();
+        const ampm = hours >= 12 ? 'PM' : 'AM';
+        hours = hours % 12;
+        if (hours === 0) hours = 12;
+        const minStr = String(minutes).padStart(2, '0');
+        return `${day} de ${monthName}, ${hours}:${minStr}${ampm}`;
+    }
+
+
+    // Funcion para renderizar la tabla con los registros
     function render(list) {
         tablaBody.innerHTML = '';
         if (!list.length) {
@@ -93,27 +107,24 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         for (const r of list) {
             const tarifaLabel = r.tarifaLabel || (TARIFAS[r.tarifa] && TARIFAS[r.tarifa].label) || r.tarifa;
-            const diaVal = (typeof r.tarifaDia !== 'undefined') ? formatCurrency(r.tarifaDia) : '';
-            const nocheVal = (typeof r.tarifaNoche !== 'undefined') ? formatCurrency(r.tarifaNoche) : '';
 
             const tr = document.createElement('tr');
             tr.innerHTML = `
-        <td>${r.matricula}</td>
-        <td>${new Date(r.fechaIngreso).toLocaleString()}</td>
-        <td>
-          <div>${tarifaLabel}</div>
-          <div class="small">D: S/ ${diaVal} | N: S/ ${nocheVal}</div>
-        </td>
-        <td><button class="big-btn" style="padding:6px 8px" onclick="confirmRetirar(${r.id}, '${r.matricula.replace("'", "\\'")}')">RETIRAR</button></td>
-      `;
+      <td>${r.matricula}</td>
+      <td>${formatDateShort(r.fechaIngreso)}</td>
+      <td>
+        <div>${tarifaLabel}</div>
+      </td>
+      <td><button class="big-btn" style="padding:6px 8px" onclick="confirmRetirar(${r.id}, '${r.matricula.replace("'", "\\'")}')">RETIRAR</button></td>
+    `;
             tablaBody.appendChild(tr);
         }
     }
 
-    /* ===================== CARGA Y FILTRADO ===================== */
 
+    // Funciones para renderizar la tabla con los registros y filtrar
     async function cargarYRenderizar() {
-        const all = await db.cobros.orderBy('fechaIngreso').reverse().toArray();
+        const all = await db.cobros.orderBy('fechaIngreso').reverse().toArray(); //ordena por fecha ingreso
         rowsCache = all;
         aplicarFiltro();
     }
@@ -128,13 +139,16 @@ document.addEventListener('DOMContentLoaded', () => {
         render(filtered);
     }
 
-    /* ===================== INGRESO (SUBMIT) ===================== */
-
+    // INGRESO
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
         const raw = matriculaInput.value;
         const matricula = normalizeMatricula(raw);
-        if (!matricula) { showToast('Ingrese matrícula', 'warn'); matriculaInput.focus(); return; }
+        if (!matricula) {
+            showToast('Ingrese matrícula', 'warn');
+            matriculaInput.focus();
+            return;
+        }
         const tarifaKey = tarifaSelect.value;
 
         const adelantoVal = adelantoInput.value;
@@ -161,7 +175,7 @@ document.addEventListener('DOMContentLoaded', () => {
             matriculaInput.value = '';
             adelantoInput.value = '';
             tarifaSelect.value = 'auto_viejo';
-            matriculaInput.focus();
+            // matriculaInput.focus();
 
             await cargarYRenderizar();
         } catch (err) {
@@ -170,11 +184,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    /* ===================== BOTONES RÁPIDOS DE TARIFA ===================== */
-
+    // Selector rapido de tarifa
     function setTarifa(t) {
         tarifaSelect.value = t;
-        matriculaInput.focus();
+        // matriculaInput.focus();
         const label = TARIFAS[t] ? TARIFAS[t].label : t;
         showToast(`${label} seleccionada`, 'info', 1200);
     }
@@ -186,8 +199,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    /* ===================== FUNCION DE CÁLCULO (YA IMPLEMENTADA) ===================== */
-
+    // Funcion para calcular el cobro total
     function calcularCobro(record, fechaSalida) {
         const tarifaDia = (typeof record.tarifaDia !== 'undefined') ? Number(record.tarifaDia) : (TARIFAS[record.tarifa] ? TARIFAS[record.tarifa].dia : 0);
         const tarifaNoche = (typeof record.tarifaNoche !== 'undefined') ? Number(record.tarifaNoche) : (TARIFAS[record.tarifa] ? TARIFAS[record.tarifa].noche : 0);
@@ -195,34 +207,45 @@ document.addEventListener('DOMContentLoaded', () => {
         const entrada = new Date(record.fechaIngreso);
         const salida = new Date(fechaSalida);
 
+        // Si por alguna razón la salida es anterior a la entrada, devolver 0
         if (salida <= entrada) return 0;
 
         const entradaDateStr = entrada.toDateString();
         const salidaDateStr = salida.toDateString();
 
+        // Caso 1: fecha/hora salida y fecha/hora entrada pertenecen al mismo dia
         if (entradaDateStr === salidaDateStr) {
             const diffMs = salida - entrada;
             const diffHoras = diffMs / (1000*60*60);
 
+            // Si un vehiculo se queda menos de 1 hora, no paga nada
             if (diffHoras < 1) return 0;
+            // Si se queda menos de 5 horas, paga tarifa dia menos 1
             if (diffHoras < 5) return Math.max(0, tarifaDia - 1);
+            // Si se queda más de 5 horas, paga tarifa día completa
             return tarifaDia;
         }
 
+        // Caso 2: fechas distintas -> calculo por partes
         let total = 0;
 
         const entradaMinutes = entrada.getHours()*60 + entrada.getMinutes();
         const MIN_12_30 = 12*60 + 30; // 750
         const MIN_15_30 = 15*60 + 30; // 930
 
+        // Día de entrada
         if (entradaMinutes >= MIN_15_30) {
+            // Si ingreso despues de las 3:30pm, no paga por ese día
             total += 0;
         } else if (entradaMinutes > MIN_12_30 && entradaMinutes < MIN_15_30) {
+            // Si ingreso entre las 3:30pm y las 12:30pm, paga mitad de tarifa día
             total += tarifaDia / 2;
         } else {
+            // Si entro antes de las 12:30pm, paga día completo
             total += tarifaDia;
         }
 
+        // Medianoches y días completos
         const startMidnight = new Date(entrada);
         startMidnight.setHours(0,0,0,0);
         const endMidnight = new Date(salida);
@@ -231,27 +254,33 @@ document.addEventListener('DOMContentLoaded', () => {
         let midnightsPassed = Math.round((endMidnight - startMidnight) / (24*60*60*1000));
         if (midnightsPassed < 0) midnightsPassed = 0;
 
+        // Por cada medianoche que pasa se adiciona tarifa noche completa
         total += midnightsPassed * tarifaNoche;
 
+        // Por cada dia completo que el vehiculo pasa en la cochera, se adiciona tarifa dia completa
+        // Los "días completos" son (medianoche count - 1). Ej: si pasa 4 medianoches -> 3 días completos intermedios
         const diasCompletos = Math.max(0, midnightsPassed - 1);
         total += diasCompletos * tarifaDia;
 
+        // Día de salida
         const salidaMinutes = salida.getHours()*60 + salida.getMinutes();
-        const MIN_11_30 = 11*60 + 30; // 690
+        const MIN_10_30 = 10*60 + 30; // 630
 
-        if (salidaMinutes < MIN_11_30) {
+        if (salidaMinutes < MIN_10_30) {
+            // Si sale antes de las 10:30am, no paga por ese dia
             total += 0;
-        } else if (salidaMinutes >= MIN_11_30 && salidaMinutes < MIN_15_30) {
+        } else if (salidaMinutes >= MIN_10_30 && salidaMinutes < MIN_15_30) {
+            // Si sale entre las 10:30am y las 3:30pm, paga tarifa dia menos 1
             total += Math.max(0, tarifaDia - 1);
         } else {
+            // Si sale despues de las 3:30pm, paga tarifa dia completa
             total += tarifaDia;
         }
 
         return Number((total).toFixed(2));
     }
 
-    /* ===================== MODAL DE CONFIRMACIÓN PARA RETIRAR (MODIFICADA) ===================== */
-
+    // Modal (ventana) para retiro
     window.confirmRetirar = async function(id, matricula) {
         pendienteEliminarId = id;
 
@@ -297,6 +326,7 @@ document.addEventListener('DOMContentLoaded', () => {
         modal.setAttribute('aria-hidden', 'false');
     };
 
+    // Retirar? No
     modalNo.addEventListener('click', () => {
         pendienteEliminarId = null;
         pendingRetiro = null;
@@ -304,6 +334,7 @@ document.addEventListener('DOMContentLoaded', () => {
         modal.setAttribute('aria-hidden', 'true');
     });
 
+    // Retirar? Si
     modalSi.addEventListener('click', async () => {
         if (!pendingRetiro) {
             showToast('No hay retiro pendiente', 'warn');
@@ -318,9 +349,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const nuevoRetiro = {
                 matricula: rec.matricula,
                 tarifa: rec.tarifa,
-                tarifaLabel: rec.tarifaLabel || (TARIFAS[rec.tarifa] && TARIFAS[rec.tarifa].label) || rec.tarifa,
-                tarifaDia: (typeof rec.tarifaDia !== 'undefined') ? rec.tarifaDia : (TARIFAS[rec.tarifa] ? TARIFAS[rec.tarifa].dia : 0),
-                tarifaNoche: (typeof rec.tarifaNoche !== 'undefined') ? rec.tarifaNoche : (TARIFAS[rec.tarifa] ? TARIFAS[rec.tarifa].noche : 0),
                 fechaIngreso: rec.fechaIngreso,
                 fechaSalida: pendingRetiro.fechaSalida.toISOString(),
                 adelanto: pendingRetiro.adelanto,
@@ -341,7 +369,7 @@ document.addEventListener('DOMContentLoaded', () => {
             modal.setAttribute('aria-hidden', 'true');
             matriculaInput.value = '';
             adelantoInput.value = '';
-            matriculaInput.focus();
+            // matriculaInput.focus();
 
             showToast('Retiro guardado y registro eliminado', 'info');
             await cargarYRenderizar();
@@ -352,8 +380,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    /* ===================== INPUTS: mayúsculas y filtrado en vivo ===================== */
-
+    // Funcion para hacer filtro y mayus en input matricula
     matriculaInput.addEventListener('input', () => {
         const pos = matriculaInput.selectionStart;
         matriculaInput.value = matriculaInput.value.toUpperCase();
@@ -361,7 +388,7 @@ document.addEventListener('DOMContentLoaded', () => {
         aplicarFiltro();
     });
 
-    /* ===================== EXPORT CSV (REINVENTADA: exporta desde 'retiros' y la vacía) ===================== */
+    // Exportar CSV
 
     exportBtn.addEventListener('click', async () => {
         try {
@@ -371,16 +398,26 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            const cols = ['matricula','fechaIngreso','fechaSalida','tarifa','tarifaLabel','tarifaDia','tarifaNoche','adelanto','totalPago','debe'];
+            const cols = ['matricula','fechaIngreso','fechaSalida','tarifa','adelanto','debe','totalPago'];
             const csv = [cols.join(',')].concat(arr.map(r =>
-                `"${(r.matricula||'')}","${(r.fechaIngreso||'')}","${(r.fechaSalida||'')}","${(r.tarifa||'')}","${(r.tarifaLabel||'')}","${(typeof r.tarifaDia!=='undefined'?r.tarifaDia:'')}","${(typeof r.tarifaNoche!=='undefined'?r.tarifaNoche:'')}","${(r.adelanto||0)}","${(r.totalPago||0)}","${(r.debe||0)}"`
+                `"${(r.matricula||'')}","${(r.fechaIngreso||'')}","${(r.fechaSalida||'')}","${(r.tarifa||'')}","${(r.adelanto||0)}","${(r.debe||0)}","${(r.totalPago||0)}"`
             )).join('\n');
 
             const blob = new Blob([csv], {type:'text/csv'});
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = 'retiros.csv';
+
+            const now = new Date();
+
+            const yyyy = now.getFullYear();
+            const mm = String(now.getMonth() + 1).padStart(2, '0');
+            const dd = String(now.getDate()).padStart(2, '0');
+            const hh = String(now.getHours()).padStart(2, '0');
+            const min = String(now.getMinutes()).padStart(2, '0');
+
+            a.download = `${yyyy}-${mm}-${dd}_${hh}-${min}.csv`;
+
             a.click();
             URL.revokeObjectURL(url);
 
@@ -395,7 +432,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    /* ===================== INICIALIZACIÓN ===================== */
+    // Cargar datos iniciales
     cargarYRenderizar();
 
-}); // DOMContentLoaded end
+});

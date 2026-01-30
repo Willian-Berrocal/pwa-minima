@@ -11,7 +11,7 @@
 
 <header>
   <div>
-    <h1>Cochera</h1>
+    <h1 class="noseleccionable">Cochera</h1>
   </div>
   <div class="top-actions">
     <button id="exportBtn" class="big-btn muted" title="Exportar CSV">Exportar</button>
@@ -61,14 +61,21 @@
 
 <!-- TABLA (sin campo de filtro separado) -->
 <div class="card" style="margin-bottom:120px">
-  <table id="tabla" aria-live="polite">
-    <thead><tr><th>Matrícula</th><th>Ingreso</th><th>Tarifa</th><th>Acción</th></tr></thead>
+  <table id="tabla" class="noseleccionable" aria-live="polite">
+    <thead>
+      <tr>
+        <th>Matrícula</th>
+        <th>Ingreso</th>
+        <th>Tarifa</th>
+        <th>Acción</th>
+      </tr>
+    </thead>
     <tbody></tbody>
   </table>
 </div>
 
 <!-- MODAL -->
-<div id="modal" aria-hidden="true">
+<div id="modal" class="noseleccionable" aria-hidden="true">
   <div class="modal-box">
     <p id="modal-text">Retirar ?</p>
     <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
@@ -79,7 +86,7 @@
 </div>
 
 <!-- CONTAINER PARA TOASTS -->
-<div id="toast-container" aria-live="polite" aria-atomic="true"></div>
+<div id="toast-container" class="noseleccionable" aria-live="polite" aria-atomic="true"></div>
 
 <!-- Dexie (CDN) y aplicación -->
 <script src="https://unpkg.com/dexie@latest/dist/dexie.min.js"></script>
