@@ -251,7 +251,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const endMidnight = new Date(salida);
         endMidnight.setHours(0,0,0,0);
 
-        let midnightsPassed = Math.round((endMidnight - startMidnight) / (24*60*60*1000));
+        let midnightsPassed = Math.floor((endMidnight - startMidnight) / (24*60*60*1000));
         if (midnightsPassed < 0) midnightsPassed = 0;
 
         // Por cada medianoche que pasa se adiciona tarifa noche completa
