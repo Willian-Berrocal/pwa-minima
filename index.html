@@ -7,11 +7,11 @@
   <link rel="manifest" href="manifest.json" />
   <link rel="stylesheet" href="styles.css" />
 </head>
-<body>
+<body class="noseleccionable">
 
 <header>
   <div>
-    <h1 class="noseleccionable">Cochera</h1>
+    <h1>Cochera</h1>
   </div>
   <div class="top-actions">
     <button id="exportBtn" class="big-btn muted" title="Exportar CSV">Exportar</button>
@@ -36,7 +36,6 @@
       <option value="triciclo">Triciclo (Día S/.1 | Noche S/.4)</option>
       <option value="afilador">Afilador (Día S/.1 | Noche S/.2)</option>
       <option value="camion">Camión (Día S/.7 | Noche S/.12)</option>
-      <option value="bicicleta">Bicicleta (Día S/.1 | Noche S/.2)</option>
     </select>
 
     <div class="quick">
@@ -61,7 +60,7 @@
 
 <!-- TABLA (sin campo de filtro separado) -->
 <div class="card" style="margin-bottom:120px">
-  <table id="tabla" class="noseleccionable" aria-live="polite">
+  <table id="tabla" aria-live="polite">
     <thead>
       <tr>
         <th>Matrícula</th>
@@ -75,7 +74,7 @@
 </div>
 
 <!-- MODAL -->
-<div id="modal" class="noseleccionable" aria-hidden="true">
+<div id="modal" aria-hidden="true">
   <div class="modal-box">
     <p id="modal-text">Retirar ?</p>
     <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
@@ -86,7 +85,7 @@
 </div>
 
 <!-- CONTAINER PARA TOASTS -->
-<div id="toast-container" class="noseleccionable" aria-live="polite" aria-atomic="true"></div>
+<div id="toast-container" aria-live="polite" aria-atomic="true"></div>
 
 <!-- Dexie (CDN) y aplicación -->
 <script src="https://unpkg.com/dexie@latest/dist/dexie.min.js"></script>
