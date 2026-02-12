@@ -36,12 +36,13 @@
       <option value="triciclo">Triciclo (Día S/.1 | Noche S/.4)</option>
       <option value="afilador">Afilador (Día S/.1 | Noche S/.2)</option>
       <option value="camion">Camión (Día S/.7 | Noche S/.12)</option>
+      <option value="otro">Otro (Personalizado)</option>
     </select>
 
     <div class="quick">
-      <button type="button" class="quick-btn" data-tarifa="auto_viejo">Auto viejo</button>
-      <button type="button" class="quick-btn" data-tarifa="auto_nuevo">Auto nuevo</button>
-      <button type="button" class="quick-btn" data-tarifa="mototaxi">Mototaxi</button>
+      <!-- Aquí antes estaban los quick-buttons: ahora quedan dos inputs ocultos que aparecen al seleccionar "Otro" -->
+      <input id="customDia" class="custom-tarifa" type="number" inputmode="decimal" min="1" step="0.01" placeholder="Día: S/." style="display:none" />
+      <input id="customNoche" class="custom-tarifa" type="number" inputmode="decimal" min="1" step="0.01" placeholder="Noche: S/." style="display:none" />
     </div>
 
     <div style="height:8px"></div>
@@ -92,6 +93,3 @@
 <script src="app.js"></script>
 </body>
 </html>
-
-
-

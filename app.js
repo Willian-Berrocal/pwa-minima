@@ -30,6 +30,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const form = document.getElementById('formIngreso');
     const matriculaInput = document.getElementById('matricula');
     const tarifaSelect = document.getElementById('tarifa');
+    const customDiaInput = document.getElementById('customDia');
+    const customNocheInput = document.getElementById('customNoche');
     const adelantoInput = document.getElementById('adelanto');
     const tablaBody = document.querySelector('#tabla tbody');
     const exportBtn = document.getElementById('exportBtn');
@@ -51,7 +53,7 @@ document.addEventListener('DOMContentLoaded', () => {
         triciclo: { label: 'Triciclo', dia: 1, noche: 4 },
         afilador: { label: 'Afilador', dia: 1, noche: 2 },
         camion: { label: 'Camion', dia: 7, noche: 12 },
-        bicicleta: { label: 'Bicicleta', dia: 1, noche: 2 }
+        // NOTA: no hay entrada para 'otro' aquí, porque 'otro' usará los inputs customDia/customNoche
     };
 
     // Usuarios administradores
@@ -114,12 +116,19 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         for (const r of list) {
             const tr = document.createElement('tr');
+
+            // Determinar la visualización de la tarifa (si fue "otro", usamos los valores guardados)
+            let tarifaHtml = '';
+            if (r.tarifa === 'otro') {
+                tarifaHtml = `<div>Otro</div><div class="small">Día S/. ${formatCurrency(r.tarifaDia)} | Noche S/. ${formatCurrency(r.tarifaNoche)}</div>`;
+            } else {
+                tarifaHtml = `<div>${TARIFAS[r.tarifa].label}</div>`;
+            }
+
             tr.innerHTML = `
       <td>${r.matricula}</td>
       <td>${formatDateShort(r.fechaIngreso)}</td>
-      <td>
-        <div>${TARIFAS[r.tarifa].label}</div>
-      </td>
+      <td>${tarifaHtml}</td>
       <td><button class="big-btn" style="padding:6px 8px" onclick="confirmRetirar(${r.id}, '${r.matricula.replace("'", "\\'")}')">RETIRAR</button></td>
     `;
             tablaBody.appendChild(tr);
@@ -144,6 +153,25 @@ document.addEventListener('DOMContentLoaded', () => {
         render(filtered);
     }
 
+    // Mostrar / ocultar inputs personalizados si tarifa === 'otro'
+    function actualizarCustomInputsVisibility() {
+        if (tarifaSelect.value === 'otro') {
+            customDiaInput.style.display = 'block';
+            customNocheInput.style.display = 'block';
+            customDiaInput.setAttribute('required', 'true');
+            customNocheInput.setAttribute('required', 'true');
+        } else {
+            customDiaInput.style.display = 'none';
+            customNocheInput.style.display = 'none';
+            customDiaInput.removeAttribute('required');
+            customNocheInput.removeAttribute('required');
+        }
+    }
+
+    // Inicializar visibilidad (por si el select viene con valor)
+    actualizarCustomInputsVisibility();
+    tarifaSelect.addEventListener('change', actualizarCustomInputsVisibility);
+
     // INGRESO
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -160,9 +188,18 @@ document.addEventListener('DOMContentLoaded', () => {
         const adelanto = adelantoVal === '' ? 0 : (Number(adelantoVal) || 0);
 
         let tarifaDia = 0, tarifaNoche = 0;
-        const t = TARIFAS[tarifaKey];
-        tarifaDia = t ? t.dia : 0;
-        tarifaNoche = t ? t.noche : 0;
+
+        if (tarifaKey === 'otro') {
+            // Tomar los valores de los inputs custom
+            const d = Number(customDiaInput.value);
+            const n = Number(customNocheInput.value);
+            tarifaDia = isFinite(d) && d >= 0 ? d : 0;
+            tarifaNoche = isFinite(n) && n >= 0 ? n : 0;
+        } else {
+            const t = TARIFAS[tarifaKey];
+            tarifaDia = t ? t.dia : 0;
+            tarifaNoche = t ? t.noche : 0;
+        }
 
         try {
             await db.cobros.add({
@@ -178,26 +215,15 @@ document.addEventListener('DOMContentLoaded', () => {
             matriculaInput.value = '';
             adelantoInput.value = '';
             tarifaSelect.value = 'auto_viejo';
+            customDiaInput.value = '';
+            customNocheInput.value = '';
+            actualizarCustomInputsVisibility();
 
             await cargarYRenderizar();
         } catch (err) {
             console.error(err);
             showToast('Error al guardar', 'error');
         }
-    });
-
-    // Selector rapido de tarifa
-    function setTarifa(t) {
-        tarifaSelect.value = t;
-        const label = TARIFAS[t] ? TARIFAS[t].label : t;
-        showToast(`${label} seleccionada`, 'info', 1200);
-    }
-
-    document.querySelectorAll('.quick-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const tarifa = btn.dataset.tarifa;
-            setTarifa(tarifa);
-        });
     });
 
     // Calculo del cobro total

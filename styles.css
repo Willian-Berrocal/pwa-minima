@@ -78,12 +78,23 @@ select{
     color: #fff;
 }
 
+/* quick area (donde aparecían los botones; ahora alojará inputs personalizados) */
 .quick {
     display: flex;
     gap: 8px;
     margin-top: 8px;
 }
 
+/* estilos para inputs de tarifa personalizada */
+.custom-tarifa {
+    flex: 1;
+    padding: 10px;
+    font-size: 16px;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+}
+
+/* Mantener estilos previos de quick-btn por compatibilidad futura */
 .quick-btn {
     padding: 10px;
     border-radius: 8px;
