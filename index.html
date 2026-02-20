@@ -74,7 +74,7 @@
   </table>
 </div>
 
-<!-- MODAL -->
+<!-- MODAL RETIRO -->
 <div id="modal" aria-hidden="true">
   <div class="modal-box">
     <p id="modal-text">Retirar ?</p>
@@ -85,10 +85,23 @@
   </div>
 </div>
 
+<!-- MODAL AUTH (se muestra si no estás autenticado) -->
+<div id="authModal" aria-hidden="true" style="display:none; position:fixed; inset:0; z-index:2000; align-items:center; justify-content:center; background: rgba(0,0,0,0.4);">
+  <div class="modal-box" style="min-width:320px;">
+    <h3 style="margin:0 0 8px 0">Iniciar sesión</h3>
+    <input id="authEmail" type="email" placeholder="Correo" style="margin-bottom:8px; width:100%; padding:10px; border-radius:8px; border:1px solid #ddd" />
+    <input id="authPassword" type="password" placeholder="Contraseña" style="margin-bottom:8px; width:100%; padding:10px; border-radius:8px; border:1px solid #ddd" />
+    <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:6px;">
+      <button id="authLoginBtn" class="big-btn primary" style="width:120px">Iniciar</button>
+    </div>
+  </div>
+</div>
+
 <!-- CONTAINER PARA TOASTS -->
 <div id="toast-container" aria-live="polite" aria-atomic="true"></div>
 
-<!-- Dexie (CDN) y aplicación -->
+<!-- Supabase + Dexie (CDNs) y aplicación -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://unpkg.com/dexie@latest/dist/dexie.min.js"></script>
 <script src="app.js"></script>
 </body>

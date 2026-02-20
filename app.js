@@ -1,5 +1,10 @@
 document.addEventListener('DOMContentLoaded', () => {
 
+    // --- Supabase (credenciales que me diste) ---
+    const SUPABASE_URL = 'https://jxyusfojvrcxsorzjtdd.supabase.co';
+    const SUPABASE_KEY = 'sb_publishable_lzbCKGqDwU9XjTCFNowSAw_c5rwVM1U';
+    const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
     // DB setup (Dexie)
     const db = new Dexie("CocheraDB");
 
@@ -40,6 +45,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const modalNo = document.getElementById('modal-no');
     const modalSi = document.getElementById('modal-si');
     const toastContainer = document.getElementById('toast-container');
+
+    // Auth modal refs
+    const authModal = document.getElementById('authModal');
+    const authEmail = document.getElementById('authEmail');
+    const authPassword = document.getElementById('authPassword');
+    const authLoginBtn = document.getElementById('authLoginBtn');
 
     let rowsCache = [];
     let pendingRetiro = null;
@@ -172,9 +183,102 @@ document.addEventListener('DOMContentLoaded', () => {
     actualizarCustomInputsVisibility();
     tarifaSelect.addEventListener('change', actualizarCustomInputsVisibility);
 
+    // AUTH LOGIC
+    function showAuthModal() {
+        authModal.style.display = 'flex';
+        authModal.setAttribute('aria-hidden', 'false');
+        authEmail.focus();
+    }
+    function hideAuthModal() {
+        authModal.style.display = 'none';
+        authModal.setAttribute('aria-hidden', 'true');
+        authEmail.value = '';
+        authPassword.value = '';
+    }
+
+    // Cuando cambia el estado de auth (login/logout), actualizamos UI
+    _supabase.auth.onAuthStateChange((event, session) => {
+        if (session && session.user) {
+            hideAuthModal();
+            // recargar datos locales (si corresponde)
+            cargarYRenderizar();
+            showToast(`Bienvenido ${session.user.email}`, 'success', 1800);
+        } else {
+            // obligamos a iniciar sesion antes de usar la app
+            showAuthModal();
+        }
+    });
+
+    // Intento inicial para ver si existe sesión
+    (async () => {
+        try {
+            const { data } = await _supabase.auth.getSession();
+            const session = data ? data.session : null;
+            if (!session || !session.user) {
+                showAuthModal();
+            } else {
+                hideAuthModal();
+            }
+        } catch (err) {
+            console.error('Error comprobando sesión supabase', err);
+            showAuthModal();
+        }
+    })();
+
+    // Login button handler
+    authLoginBtn.addEventListener('click', async () => {
+        const email = authEmail.value.trim();
+        const password = authPassword.value;
+        if (!email || !password) {
+            showToast('Email y contraseña son requeridos', 'warn');
+            return;
+        }
+        authLoginBtn.disabled = true;
+        authLoginBtn.textContent = 'Ingresando...';
+        try {
+            const { data, error } = await _supabase.auth.signInWithPassword({ email, password });
+            if (error) {
+                showToast(error.message || 'Error al iniciar sesión', 'error');
+                authLoginBtn.disabled = false;
+                authLoginBtn.textContent = 'Iniciar';
+                return;
+            }
+            if (data && data.user) {
+                hideAuthModal();
+                showToast(`Hola ${data.user.email}`, 'success');
+                await cargarYRenderizar();
+            } else {
+                // En teoría el onAuthStateChange se encargará, pero por si acaso:
+                showAuthModal();
+            }
+        } catch (err) {
+            console.error(err);
+            showToast('Error al intentar iniciar sesión', 'error');
+        } finally {
+            authLoginBtn.disabled = false;
+            authLoginBtn.textContent = 'Iniciar';
+        }
+    });
+
+    // Helper: asegura que hay usuario autenticado (si no, muestra modal)
+    async function ensureAuthenticated() {
+        const { data: { user } } = await _supabase.auth.getUser();
+        if (!user) {
+            showAuthModal();
+            showToast('Debes iniciar sesión para usar esta acción', 'warn');
+            return null;
+        }
+        return user;
+    }
+
     // INGRESO
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
+
+        // ver si hay usuario
+        const user = await ensureAuthenticated();
+        if (!user) return;
+
         const raw = matriculaInput.value;
         const matricula = normalizeMatricula(raw);
         if (!matricula) {
@@ -308,6 +412,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Modal (ventana) para retiro
     window.confirmRetirar = async function(id, matricula) {
+        // antes de mostrar modal, verificar auth
+        const user = await ensureAuthenticated();
+        if (!user) return;
+
         // Obtener el registro completo
         const record = await db.cobros.get(id);
         if (!record) {
@@ -360,6 +468,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Retirar? Si
     modalSi.addEventListener('click', async () => {
+        // verificar auth de nuevo
+        const user = await ensureAuthenticated();
+        if (!user) {
+            modal.style.display = 'none';
+            modal.setAttribute('aria-hidden', 'true');
+            pendingRetiro = null;
+            return;
+        }
+
         if (!pendingRetiro) {
             showToast('No hay retiro pendiente', 'warn');
             modal.style.display = 'none';
@@ -390,7 +507,6 @@ document.addEventListener('DOMContentLoaded', () => {
             modal.setAttribute('aria-hidden', 'true');
             matriculaInput.value = '';
             adelantoInput.value = '';
-            // matriculaInput.focus();
 
             showToast('Retiro guardado y registro eliminado', 'info');
             await cargarYRenderizar();
@@ -411,6 +527,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Exportar CSV
     exportBtn.addEventListener('click', async () => {
+        const user = await ensureAuthenticated();
+        if (!user) return;
+
         try {
             const arr = await db.retiros.orderBy('fechaSalida').reverse().toArray();
             if (!arr || arr.length === 0) {
