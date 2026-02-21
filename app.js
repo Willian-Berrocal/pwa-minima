@@ -5,19 +5,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const SUPABASE_KEY = 'sb_publishable_lzbCKGqDwU9XjTCFNowSAw_c5rwVM1U';
     const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-    // DB setup (Dexie)
+    // DB setup (Dexie) -> SOLO para 'retiros' ahora
     const db = new Dexie("CocheraDB");
-
-    // Dos bases de datos: cobros (funcional) y retiros (exportacion de datos)
     db.version(1).stores({
-        cobros: "++id, matricula, tarifa, fechaIngreso"
-    });
-    db.version(2).stores({
-        cobros: "++id, matricula, tarifa, fechaIngreso",
         // tabla 'retiros' para almacenar los retiros que luego se exportan
         retiros: "++id, matricula, tarifa, fechaIngreso, fechaSalida"
     });
-    // hay dos versiones ya que permite que los que usaban la primera version migren a la segunda sin problemas
 
     // Pedir persistencia de la base de datos
     if (navigator.storage && navigator.storage.persist) {
@@ -73,7 +66,7 @@ document.addEventListener('DOMContentLoaded', () => {
         '1b635d1b-abff-4317-ba93-632ddb4565bc',
         '004fa62d-5137-4f0b-a98f-9330797cce6e',
         '7a8e41a2-36d0-4c11-8d4b-b508aed84a91'
-    ]
+    ];
 
     // Funcion para mostrar notificaciones no bloqueantes (Toasts)
     function showToast(message, type = 'info', duration = 2500) {
@@ -82,13 +75,8 @@ document.addEventListener('DOMContentLoaded', () => {
         t.innerHTML = `<div>${message}</div><button class="close" aria-label="cerrar">&times;</button>`;
         toastContainer.appendChild(t);
 
-        t.querySelector('.close').addEventListener('click', () => {
-            t.remove();
-        });
-
-        setTimeout(() => {
-            t.remove();
-        }, duration);
+        t.querySelector('.close').addEventListener('click', () => t.remove());
+        setTimeout(() => t.remove(), duration);
     }
 
     // Funciones auxiliares (matricula en MAYUS, dinero con dos decimales, fechas con mes escrito)
@@ -103,7 +91,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function formatDateShort(isoString) {
         const d = new Date(isoString);
-        // Nombres de meses en español (minúsculas como pediste)
         const months = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','setiembre','octubre','noviembre','diciembre'];
         const day = d.getDate();
         const monthName = months[d.getMonth()] || '';
@@ -149,9 +136,41 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Funciones para renderizar la tabla con los registros y filtrar
     async function cargarYRenderizar() {
-        const all = await db.cobros.orderBy('fechaIngreso').reverse().toArray(); //ordena por fecha ingreso
-        rowsCache = all;
-        aplicarFiltro();
+        try {
+            const { data, error } = await _supabase
+                .from('cobros')
+                .select('*')
+                .order('fechaingreso', { ascending: false });
+
+            if (error) {
+                console.error('Error cargando cobros desde Supabase', error);
+                showToast('Error cargando registros', 'error');
+                rowsCache = [];
+                render([]);
+                return;
+            }
+
+            // Normalizar campos para mantener compatibilidad con el render actual
+            rowsCache = (data || []).map(r => {
+                return {
+                    id: r.id,
+                    matricula: r.matricula,
+                    tarifa: r.tarifa,
+                    tarifaDia: (r.tarifadia !== undefined ? Number(r.tarifadia) : (r.tarifaDia !== undefined ? Number(r.tarifaDia) : 0)),
+                    tarifaNoche: (r.tarifanoche !== undefined ? Number(r.tarifanoche) : (r.tarifaNoche !== undefined ? Number(r.tarifaNoche) : 0)),
+                    fechaIngreso: (r.fechaingreso || r.created_at || r.fechaIngreso),
+                    adelanto: (r.adelanto !== undefined ? Number(r.adelanto) : 0),
+                    user_id: r.user_id || null
+                };
+            });
+
+            aplicarFiltro();
+        } catch (err) {
+            console.error(err);
+            showToast('Error cargando registros', 'error');
+            rowsCache = [];
+            render([]);
+        }
     }
 
     function aplicarFiltro() {
@@ -214,13 +233,10 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const { data } = await _supabase.auth.getSession();
             const session = data ? data.session : null;
-            if (!session || !session.user) {
-                showAuthModal();
-            } else {
-                hideAuthModal();
-            }
+            if (!session || !session.user) showAuthModal();
+            else hideAuthModal();
         } catch (err) {
-            console.error('Error comprobando sesión supabase', err);
+            console.error('Error comprobando sesión', err);
             showAuthModal();
         }
     })();
@@ -294,7 +310,6 @@ document.addEventListener('DOMContentLoaded', () => {
         let tarifaDia = 0, tarifaNoche = 0;
 
         if (tarifaKey === 'otro') {
-            // Tomar los valores de los inputs custom
             const d = Number(customDiaInput.value);
             const n = Number(customNocheInput.value);
             tarifaDia = isFinite(d) && d >= 0 ? d : 0;
@@ -306,14 +321,24 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         try {
-            await db.cobros.add({
+            const payload = {
                 matricula,
                 tarifa: tarifaKey,
-                tarifaDia,
-                tarifaNoche,
-                fechaIngreso: new Date().toISOString(),
+                tarifadia: tarifaDia,
+                tarifanoche: tarifaNoche,
+                fechaingreso: new Date().toISOString(),
                 adelanto
-            });
+                // user_id se completa por default auth.uid() si configuraste la tabla así
+            };
+
+            const { data, error } = await _supabase.from('cobros').insert([payload]);
+
+            if (error) {
+                console.error('Error insert supabase', error);
+                showToast('Error al guardar en servidor', 'error');
+                return;
+            }
+
             showToast(`Ingreso registrado: ${matricula}`, 'success');
 
             matriculaInput.value = '';
@@ -410,53 +435,69 @@ document.addEventListener('DOMContentLoaded', () => {
         return Number((total).toFixed(2));
     }
 
-    // Modal (ventana) para retiro
+    // RETIRO: obtener registro desde Supabase y mostrar modal
     window.confirmRetirar = async function(id, matricula) {
         // antes de mostrar modal, verificar auth
         const user = await ensureAuthenticated();
         if (!user) return;
 
-        // Obtener el registro completo
-        const record = await db.cobros.get(id);
-        if (!record) {
-            showToast('Registro no encontrado', 'error');
-            return;
+        try {
+            const { data, error } = await _supabase.from('cobros').select('*').eq('id', id).maybeSingle();
+            if (error) {
+                console.error('Error fetching cobro', error);
+                showToast('Error obteniendo registro', 'error');
+                return;
+            }
+            if (!data) {
+                showToast('Registro no encontrado', 'error');
+                return;
+            }
+
+            // Normalizar
+            const record = {
+                id: data.id,
+                matricula: data.matricula,
+                tarifa: data.tarifa,
+                tarifaDia: Number(data.tarifadia || data.tarifadia || 0),
+                tarifaNoche: Number(data.tarifanoche || data.tarifanoche || 0),
+                fechaIngreso: data.fechaingreso || data.created_at,
+                adelanto: Number(data.adelanto || 0)
+            };
+
+            const fechaSalida = new Date();
+            const totalCalc = calcularCobro(record, fechaSalida);
+            const adel = record.adelanto || 0;
+            const debe = Math.max(0, Number((totalCalc - adel).toFixed(2)));
+
+            pendingRetiro = {
+                id: record.id,
+                matricula: record.matricula,
+                tarifa: record.tarifa,
+                fechaIngreso: record.fechaIngreso,
+                fechaSalida,
+                totalCalc,
+                adelanto: adel,
+                debe
+            };
+
+            const adelStr = `S/ ${formatCurrency(adel)}`;
+            const totalStr = `S/ ${formatCurrency(totalCalc)}`;
+            const debeStr = `S/ ${formatCurrency(debe)}`;
+
+            modalText.innerHTML = `
+              <div>Retirar ${record.matricula}?</div>
+              <div style="margin-top:8px">Adelanto: ${adelStr}</div>
+              <div>Total: ${totalStr}</div>
+              <div style="margin-top:6px"><strong>Debe: ${debeStr}</strong></div>
+            `;
+
+            modal.style.display = 'flex';
+            modal.setAttribute('aria-hidden', 'false');
+
+        } catch (err) {
+            console.error(err);
+            showToast('Error obteniendo registro', 'error');
         }
-
-        // Fecha de salida en el momento de presionar RETIRAR
-        const fechaSalida = new Date();
-
-        // Calcular total y deuda
-        const totalCalc = calcularCobro(record, fechaSalida);
-        const adel = record && record.adelanto ? Number(record.adelanto) : 0;
-        const debe = Math.max(0, Number((totalCalc - adel).toFixed(2)));
-
-        // Guardamos en memoria para usar luego al confirmar (modalSi)
-        pendingRetiro = {
-            id,
-            matricula,
-            tarifa: record.tarifa,
-            fechaIngreso: record.fechaIngreso,
-            fechaSalida,   // Date
-            totalCalc,
-            adelanto: adel,
-            debe
-        };
-
-        // Mostrar en modal
-        const adelStr = `S/ ${formatCurrency(adel)}`;
-        const totalStr = `S/ ${formatCurrency(totalCalc)}`;
-        const debeStr = `S/ ${formatCurrency(debe)}`;
-
-        modalText.innerHTML = `
-      <div>Retirar ${matricula}?</div>
-      <div style="margin-top:8px">Adelanto: ${adelStr}</div>
-      <div>Total: ${totalStr}</div>
-      <div style="margin-top:6px"><strong>Debe: ${debeStr}</strong></div>
-    `;
-
-        modal.style.display = 'flex';
-        modal.setAttribute('aria-hidden', 'false');
     };
 
     // Retirar? No
@@ -466,9 +507,8 @@ document.addEventListener('DOMContentLoaded', () => {
         modal.setAttribute('aria-hidden', 'true');
     });
 
-    // Retirar? Si
+    // Retirar? Si -> BORRAR de Supabase y guardar en Dexie.retiros
     modalSi.addEventListener('click', async () => {
-        // verificar auth de nuevo
         const user = await ensureAuthenticated();
         if (!user) {
             modal.style.display = 'none';
@@ -485,7 +525,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         try {
-            // Preparar objeto para insertar en 'retiros'
+            // Guardar en table 'retiros' local (Dexie) para export/backup
             const nuevoRetiro = {
                 matricula: pendingRetiro.matricula,
                 tarifa: pendingRetiro.tarifa,
@@ -495,13 +535,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 debe: pendingRetiro.debe
             };
 
-            // Guardar en tabla 'retiros'
             await db.retiros.add(nuevoRetiro);
 
-            // Borrar el registro original de 'cobros'
-            await db.cobros.delete(pendingRetiro.id);
+            // Borrar registro desde Supabase
+            const { error } = await _supabase.from('cobros').delete().eq('id', pendingRetiro.id);
+            if (error) {
+                console.error('Error borrando en supabase', error);
+                showToast('Error borrando registro en servidor', 'error');
+                return;
+            }
 
-            // Limpiar variables y UI
             pendingRetiro = null;
             modal.style.display = 'none';
             modal.setAttribute('aria-hidden', 'true');
@@ -517,15 +560,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Funcion para hacer filtro y mayus en input matricula
-    matriculaInput.addEventListener('input', () => {
-        const pos = matriculaInput.selectionStart;
-        matriculaInput.value = matriculaInput.value.toUpperCase();
-        matriculaInput.setSelectionRange(pos, pos);
-        aplicarFiltro();
-    });
-
-    // Exportar CSV
+    // ---------- Export (sigue usando Dexie.retiros) ----------
     exportBtn.addEventListener('click', async () => {
         const user = await ensureAuthenticated();
         if (!user) return;
@@ -548,7 +583,6 @@ document.addEventListener('DOMContentLoaded', () => {
             a.href = url;
 
             const now = new Date();
-
             const yyyy = now.getFullYear();
             const mm = String(now.getMonth() + 1).padStart(2, '0');
             const dd = String(now.getDate()).padStart(2, '0');
@@ -556,7 +590,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const min = String(now.getMinutes()).padStart(2, '0');
 
             a.download = `${yyyy}-${mm}-${dd}_${hh}-${min}.csv`;
-
             a.click();
             URL.revokeObjectURL(url);
 
