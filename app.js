@@ -5,13 +5,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const SUPABASE_KEY = 'sb_publishable_lzbCKGqDwU9XjTCFNowSAw_c5rwVM1U';
     const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-    // DB setup (Dexie) -> SOLO para 'retiros' ahora
-    const db = new Dexie("CocheraDB");
-    db.version(1).stores({
-        // tabla 'retiros' para almacenar los retiros que luego se exportan
-        retiros: "++id, matricula, tarifa, fechaIngreso, fechaSalida"
-    });
-
     // Pedir persistencia de la base de datos
     if (navigator.storage && navigator.storage.persist) {
         navigator.storage.persist().then(p => console.log("persistencia:", p));
@@ -32,7 +25,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const customNocheInput = document.getElementById('customNoche');
     const adelantoInput = document.getElementById('adelanto');
     const tablaBody = document.querySelector('#tabla tbody');
-    const exportBtn = document.getElementById('exportBtn');
     const modal = document.getElementById('modal');
     const modalText = document.getElementById('modal-text');
     const modalNo = document.getElementById('modal-no');
@@ -507,7 +499,7 @@ document.addEventListener('DOMContentLoaded', () => {
         modal.setAttribute('aria-hidden', 'true');
     });
 
-    // Retirar? Si -> BORRAR de Supabase y guardar en Dexie.retiros
+    // Retirar? Si -> INSERT en Supabase.retiros y BORRAR de Supabase.cobros
     modalSi.addEventListener('click', async () => {
         const user = await ensureAuthenticated();
         if (!user) {
@@ -525,22 +517,29 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         try {
-            // Guardar en table 'retiros' local (Dexie) para export/backup
-            const nuevoRetiro = {
+            // Preparar objeto para insertar en 'retiros' (Supabase)
+            const nuevoRetiroPayload = {
                 matricula: pendingRetiro.matricula,
                 tarifa: pendingRetiro.tarifa,
-                fechaIngreso: pendingRetiro.fechaIngreso,
-                fechaSalida: pendingRetiro.fechaSalida.toISOString(),
+                fechaingreso: pendingRetiro.fechaIngreso,
+                fechasalida: pendingRetiro.fechaSalida.toISOString(),
                 adelanto: pendingRetiro.adelanto,
                 debe: pendingRetiro.debe
+                // user_id se completa si la tabla tiene default auth.uid()
             };
 
-            await db.retiros.add(nuevoRetiro);
+            // Insertar en Supabase.retiros
+            const { data: insertData, error: insertError } = await _supabase.from('retiros').insert([nuevoRetiroPayload]);
+            if (insertError) {
+                console.error('Error insertando retiro en supabase', insertError);
+                showToast('Error guardando retiro en servidor', 'error');
+                return;
+            }
 
-            // Borrar registro desde Supabase
-            const { error } = await _supabase.from('cobros').delete().eq('id', pendingRetiro.id);
-            if (error) {
-                console.error('Error borrando en supabase', error);
+            // Borrar registro desde Supabase.cobros
+            const { error: deleteError } = await _supabase.from('cobros').delete().eq('id', pendingRetiro.id);
+            if (deleteError) {
+                console.error('Error borrando cobro en supabase', deleteError);
                 showToast('Error borrando registro en servidor', 'error');
                 return;
             }
@@ -553,50 +552,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
             showToast('Retiro guardado y registro eliminado', 'info');
             await cargarYRenderizar();
-
-        } catch (err) {
-            console.error(err);
-            showToast('Error al procesar retiro', 'error');
-        }
-    });
-
-    // ---------- Export (sigue usando Dexie.retiros) ----------
-    exportBtn.addEventListener('click', async () => {
-        const user = await ensureAuthenticated();
-        if (!user) return;
-
-        try {
-            const arr = await db.retiros.orderBy('fechaSalida').reverse().toArray();
-            if (!arr || arr.length === 0) {
-                showToast('No hay retiros para exportar', 'warn');
-                return;
-            }
-
-            const cols = ['matricula','fechaIngreso','fechaSalida','tarifa','adelanto','debe'];
-            const csv = [cols.join(',')].concat(arr.map(r =>
-                `"${(r.matricula||'')}","${(r.fechaIngreso||'')}","${(r.fechaSalida||'')}","${(r.tarifa||'')}","${(r.adelanto||0)}","${(r.debe||0)}"`
-            )).join('\n');
-
-            const blob = new Blob([csv], {type:'text/csv'});
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-
-            const now = new Date();
-            const yyyy = now.getFullYear();
-            const mm = String(now.getMonth() + 1).padStart(2, '0');
-            const dd = String(now.getDate()).padStart(2, '0');
-            const hh = String(now.getHours()).padStart(2, '0');
-            const min = String(now.getMinutes()).padStart(2, '0');
-
-            a.download = `${yyyy}-${mm}-${dd}_${hh}-${min}.csv`;
-            a.click();
-            URL.revokeObjectURL(url);
-
-            // Una vez exportado, vaciamos la tabla de retiros
-            await db.retiros.clear();
-
-            showToast('Exportado CSV y base de retiros vaciada', 'success');
 
         } catch (err) {
             console.error(err);
