@@ -279,6 +279,54 @@ document.addEventListener('DOMContentLoaded', () => {
         return user;
     }
 
+    // ---------- Monto helpers ----------
+    // Intenta usar la RPC 'increment_monto' (SQL provista). Si no existe, hace fallback (select+update).
+    async function incrementMonto(amount) {
+        try {
+            // tentativa 1: usar RPC (transaccional en servidor)
+            const { data: rpcData, error: rpcError } = await _supabase.rpc('increment_monto', { delta: amount });
+            if (rpcError && rpcError.code) {
+                // si rpc no existe o falla, caemos al fallback
+                console.warn('RPC increment_monto fallo:', rpcError);
+            } else if (rpcData !== undefined) {
+                // rpc devuelve el nuevo monto
+                return rpcData;
+            }
+        } catch (err) {
+            console.warn('RPC increment_monto no disponible o error:', err);
+        }
+
+        // Fallback: obtener valor actual y actualizar (no 100% a prueba de race, pero sirve si no hay RPC)
+        try {
+            // leer fila
+            const { data: selData, error: selError } = await _supabase.from('monto').select('*').eq('id', 1).maybeSingle();
+            if (selError) throw selError;
+            const current = selData && selData.monto !== undefined ? Number(selData.monto) : 0;
+            const newVal = Number((current + amount).toFixed(2));
+
+            const { data: updData, error: updError } = await _supabase.from('monto').update({ monto: newVal }).eq('id', 1).select();
+            if (updError) throw updError;
+            return newVal;
+        } catch (err) {
+            console.error('Error incrementando monto (fallback):', err);
+            throw err;
+        }
+    }
+
+    async function getMonto() {
+        try {
+            const { data, error } = await _supabase.from('monto').select('monto').eq('id', 1).maybeSingle();
+            if (error) {
+                console.error('Error leyendo monto', error);
+                return 0;
+            }
+            return (data && data.monto !== undefined) ? Number(data.monto) : 0;
+        } catch (err) {
+            console.error('Error getMonto', err);
+            return 0;
+        }
+    }
+
     // INGRESO
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -329,6 +377,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.error('Error insert supabase', error);
                 showToast('Error al guardar en servidor', 'error');
                 return;
+            }
+
+            // --- FASE 5: sumar el adelanto al Monto en Supabase ---
+            if (adelanto && adelanto > 0) {
+                try {
+                    await incrementMonto(adelanto);
+                    // opcional: puedes notificar el nuevo monto si quieres
+                    // const nuevo = await getMonto();
+                    // showToast(`Monto actualizado: S/ ${formatCurrency(nuevo)}`, 'info');
+                } catch (err) {
+                    console.error('No se pudo actualizar Monto tras ingreso:', err);
+                }
             }
 
             showToast(`Ingreso registrado: ${matricula}`, 'success');
@@ -534,6 +594,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.error('Error insertando retiro en supabase', insertError);
                 showToast('Error guardando retiro en servidor', 'error');
                 return;
+            }
+
+            // --- FASE 5: sumar el debe al monto ---
+            if (pendingRetiro.debe && pendingRetiro.debe > 0) {
+                try {
+                    await incrementMonto(pendingRetiro.debe);
+                } catch (err) {
+                    console.error('No se pudo actualizar Monto tras retiro:', err);
+                    // continuamos (el retiro ya existe). Podrías manejar rollback si lo prefieres.
+                }
             }
 
             // Borrar registro desde Supabase.cobros
