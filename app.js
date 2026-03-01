@@ -29,6 +29,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const modalText = document.getElementById('modal-text');
     const modalNo = document.getElementById('modal-no');
     const modalSi = document.getElementById('modal-si');
+    const collectBtn = document.getElementById('collectBtn');
+    const collectModal = document.getElementById('collectModal');
+    const collectModalText = document.getElementById('collect-modal-text');
+    const collectNo = document.getElementById('collect-no');
+    const collectSi = document.getElementById('collect-si');
     const toastContainer = document.getElementById('toast-container');
 
     // Auth modal refs
@@ -214,9 +219,25 @@ document.addEventListener('DOMContentLoaded', () => {
             // recargar datos locales (si corresponde)
             cargarYRenderizar();
             showToast(`Bienvenido ${session.user.email}`, 'success', 1800);
+
+            // --- FASE 6: mostrar boton Recolectar solo para admins ---
+            try {
+                const uid = session.user.id;
+                if (USERADMINS.includes(uid)) {
+                    collectBtn.style.display = 'inline-block';
+                } else {
+                    collectBtn.style.display = 'none';
+                }
+            } catch (err) {
+                console.warn('No se pudo verificar admin', err);
+                collectBtn.style.display = 'none';
+            }
+
         } else {
             // obligamos a iniciar sesion antes de usar la app
             showAuthModal();
+            // ocultar boton colectar
+            if (collectBtn) collectBtn.style.display = 'none';
         }
     });
 
@@ -225,8 +246,18 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const { data } = await _supabase.auth.getSession();
             const session = data ? data.session : null;
-            if (!session || !session.user) showAuthModal();
-            else hideAuthModal();
+            if (!session || !session.user) {
+                showAuthModal();
+            } else {
+                hideAuthModal();
+                // mostrar o no el boton collect segun si es admin
+                try {
+                    const uid = session.user.id;
+                    if (USERADMINS.includes(uid)) collectBtn.style.display = 'inline-block';
+                } catch (err) {
+                    console.warn('No se pudo verificar admin', err);
+                }
+            }
         } catch (err) {
             console.error('Error comprobando sesión', err);
             showAuthModal();
@@ -347,7 +378,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const adelantoVal = adelantoInput.value;
         const adelanto = adelantoVal === '' ? 0 : (Number(adelantoVal) || 0);
 
-        let tarifaDia = 0, tarifaNoche = 0;
+        let tarifaDia, tarifaNoche;
 
         if (tarifaKey === 'otro') {
             const d = Number(customDiaInput.value);
@@ -383,9 +414,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (adelanto && adelanto > 0) {
                 try {
                     await incrementMonto(adelanto);
-                    // opcional: puedes notificar el nuevo monto si quieres
-                    // const nuevo = await getMonto();
-                    // showToast(`Monto actualizado: S/ ${formatCurrency(nuevo)}`, 'info');
                 } catch (err) {
                     console.error('No se pudo actualizar Monto tras ingreso:', err);
                 }
@@ -602,7 +630,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     await incrementMonto(pendingRetiro.debe);
                 } catch (err) {
                     console.error('No se pudo actualizar Monto tras retiro:', err);
-                    // continuamos (el retiro ya existe). Podrías manejar rollback si lo prefieres.
                 }
             }
 
@@ -627,6 +654,127 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error(err);
             showToast('Error exportando retiros', 'error');
         }
+    });
+
+    // Lógica Recolectar
+    // Mostrar modal de recoleccion con monto actual
+    collectBtn.addEventListener('click', async () => {
+        const user = await ensureAuthenticated();
+        if (!user) return;
+
+        // verificar admin de nuevo por seguridad
+        if (!USERADMINS.includes(user.id)) {
+            showToast('No tienes permiso para recolectar', 'error');
+            return;
+        }
+
+        try {
+            const montoActual = await getMonto();
+            // Si no hay monto, avisar y no mostrar modal
+            if (!montoActual || montoActual <= 0) {
+                showToast('No hay monto para recolectar', 'warn');
+                return;
+            }
+
+            // Guardamos monto en el texto del modal (y localmente si quieres)
+            collectModalText.textContent = `Recoger: S/ ${formatCurrency(montoActual)}`;
+            // Guardar en atributo temporal para usar en el confirm
+            collectModal.dataset.monto = String(montoActual);
+
+            collectModal.style.display = 'flex';
+            collectModal.setAttribute('aria-hidden', 'false');
+        } catch (err) {
+            console.error('Error preparando recoleccion', err);
+            showToast('Error obteniendo monto', 'error');
+        }
+    });
+
+    // Cancelar recoleccion
+    collectNo.addEventListener('click', () => {
+        collectModal.style.display = 'none';
+        collectModal.setAttribute('aria-hidden', 'true');
+        delete collectModal.dataset.monto;
+    });
+
+    // Confirmar recoleccion: insertar en recoleccion y luego resetear monto a 0
+    collectSi.addEventListener('click', async () => {
+        const user = await ensureAuthenticated();
+        if (!user) {
+            collectModal.style.display = 'none';
+            collectModal.setAttribute('aria-hidden', 'true');
+            delete collectModal.dataset.monto;
+            return;
+        }
+
+        // verificar admin
+        if (!USERADMINS.includes(user.id)) {
+            showToast('No tienes permiso para recolectar', 'error');
+            collectModal.style.display = 'none';
+            collectModal.setAttribute('aria-hidden', 'true');
+            delete collectModal.dataset.monto;
+            return;
+        }
+
+        // valor guardado localmente
+        const montoStr = collectModal.dataset.monto;
+        const montoToCollect = montoStr ? Number(montoStr) : 0;
+
+        if (!montoToCollect || montoToCollect <= 0) {
+            showToast('Monto inválido', 'error');
+            collectModal.style.display = 'none';
+            collectModal.setAttribute('aria-hidden', 'true');
+            delete collectModal.dataset.monto;
+            return;
+        }
+
+        try {
+            // 1) Insertar registro en recoleccion
+            const payload = {
+                monto: montoToCollect,
+                collected_at: new Date().toISOString(),
+                collected_by: user.id
+            };
+
+            const { data: insData, error: insError } = await _supabase.from('recoleccion').insert([payload]);
+            if (insError) {
+                console.error('Error insert recoleccion', insError);
+                showToast('Error guardando recolección', 'error');
+                return;
+            }
+            console.log(insData);
+
+            // 2) Resetear monto a 0 (actualizar tabla monto)
+            const { data: updData, error: updError } = await _supabase.from('monto').update({ monto: 0 }).eq('id', 1).select();
+            if (updError) {
+                console.error('Error reseteando monto', updError);
+                showToast('Error reseteando monto (recolección ya guardada)', 'warn');
+                // NOTA: la recolección ya fue guardada; puedes decidir si revertirla manualmente
+                collectModal.style.display = 'none';
+                collectModal.setAttribute('aria-hidden', 'true');
+                delete collectModal.dataset.monto;
+                await cargarYRenderizar();
+                return;
+            }
+            console.log(updData);
+
+            showToast(`Recolectado S/ ${formatCurrency(montoToCollect)}`, 'success');
+            collectModal.style.display = 'none';
+            collectModal.setAttribute('aria-hidden', 'true');
+            delete collectModal.dataset.monto;
+            await cargarYRenderizar();
+
+        } catch (err) {
+            console.error('Error procesando recoleccion', err);
+            showToast('Error procesando recolección', 'error');
+        }
+    });
+
+    // Funcion para hacer filtro y mayus en input matricula
+    matriculaInput.addEventListener('input', () => {
+        const pos = matriculaInput.selectionStart;
+        matriculaInput.value = matriculaInput.value.toUpperCase();
+        matriculaInput.setSelectionRange(pos, pos);
+        aplicarFiltro();
     });
 
     // Cargar datos iniciales

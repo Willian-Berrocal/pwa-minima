@@ -14,7 +14,7 @@
     <h1>Cochera</h1>
   </div>
   <div class="top-actions">
-    <!-- Export eliminado (fase 4). Aquí más adelante se podrá poner 'Recolectar' en la fase 5 para admins -->
+    <button id="collectBtn" class="big-btn muted" style="display:none" title="Recolectar">Recolectar</button>
   </div>
 </header>
 
@@ -81,6 +81,17 @@
     <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
       <button id="modal-no" class="big-btn muted" style="width:110px">NO</button>
       <button id="modal-si" class="big-btn danger" style="width:110px">SI</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL RECOLECCION -->
+<div id="collectModal" aria-hidden="true" style="display:none">
+  <div class="modal-box">
+    <p id="collect-modal-text">Recoger: S/ 0.00</p>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
+      <button id="collect-no" class="big-btn muted" style="width:110px">NO</button>
+      <button id="collect-si" class="big-btn danger" style="width:110px">SI</button>
     </div>
   </div>
 </div>
