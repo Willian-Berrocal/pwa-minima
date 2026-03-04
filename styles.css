@@ -107,12 +107,11 @@ select{
 table {
     width: 100%;
     border-collapse: collapse;
-    margin-top: 12px;
 }
 
 th,
 td {
-    padding: 8px;
+    padding: 8px 4px;
     border-bottom: 1px solid #eee;
     font-size: 15px;
     text-align: left;
@@ -123,7 +122,7 @@ td {
     color: #666;
 }
 
-#modal {
+.modal {
     position: fixed;
     inset: 0;
     display: none;

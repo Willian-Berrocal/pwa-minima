@@ -22,8 +22,7 @@
 <div class="card">
   <form id="formIngreso" autocomplete="off">
     <label for="matricula">Matrícula</label>
-    <input id="matricula" name="matricula" type="text" inputmode="latin"
-           autocomplete="off" placeholder="Ej: ABC123" required minlength="2" />
+    <input id="matricula" name="matricula" type="text" inputmode="latin" autocomplete="off" required minlength="2" />
 
     <div style="height:8px"></div>
 
@@ -72,10 +71,15 @@
     </thead>
     <tbody></tbody>
   </table>
+
+  <div style="height:8px"></div>
+
+  <label for="filterInput">Filtrar</label>
+  <input id="filterInput" type="text" inputmode="latin" autocomplete="off" required minlength="2" />
 </div>
 
 <!-- MODAL RETIRO -->
-<div id="modal" aria-hidden="true">
+<div id="modal" class="modal" aria-hidden="true">
   <div class="modal-box">
     <p id="modal-text">Retirar ?</p>
     <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
@@ -86,7 +90,7 @@
 </div>
 
 <!-- MODAL RECOLECCION -->
-<div id="collectModal" aria-hidden="true" style="display:none">
+<div id="collectModal" class="modal" aria-hidden="true" style="display:none">
   <div class="modal-box">
     <p id="collect-modal-text">Recoger: S/ 0.00</p>
     <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">

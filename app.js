@@ -25,6 +25,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const customNocheInput = document.getElementById('customNoche');
     const adelantoInput = document.getElementById('adelanto');
     const tablaBody = document.querySelector('#tabla tbody');
+    const filterInput = document.getElementById('filterInput');
     const modal = document.getElementById('modal');
     const modalText = document.getElementById('modal-text');
     const modalNo = document.getElementById('modal-no');
@@ -124,7 +125,7 @@ document.addEventListener('DOMContentLoaded', () => {
       <td>${r.matricula}</td>
       <td>${formatDateShort(r.fechaIngreso)}</td>
       <td>${tarifaHtml}</td>
-      <td><button class="big-btn" style="padding:6px 8px" onclick="confirmRetirar(${r.id}, '${r.matricula.replace("'", "\\'")}')">RETIRAR</button></td>
+      <td><button class="big-btn" style="padding:4px 4px" onclick="confirmRetirar(${r.id}, '${r.matricula.replace("'", "\\'")}')">RETIRAR</button></td>
     `;
             tablaBody.appendChild(tr);
         }
@@ -155,7 +156,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     tarifa: r.tarifa,
                     tarifaDia: (r.tarifadia !== undefined ? Number(r.tarifadia) : (r.tarifaDia !== undefined ? Number(r.tarifaDia) : 0)),
                     tarifaNoche: (r.tarifanoche !== undefined ? Number(r.tarifanoche) : (r.tarifaNoche !== undefined ? Number(r.tarifaNoche) : 0)),
-                    fechaIngreso: (r.fechaingreso || r.created_at || r.fechaIngreso),
+                    fechaIngreso: (r.fechaingreso || r.fechaIngreso),
                     adelanto: (r.adelanto !== undefined ? Number(r.adelanto) : 0),
                     user_id: r.user_id || null
                 };
@@ -171,7 +172,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function aplicarFiltro() {
-        const q = normalizeMatricula(matriculaInput.value);
+        const q = normalizeMatricula(filterInput.value);
         if (!q) {
             render(rowsCache);
             return;
@@ -218,7 +219,7 @@ document.addEventListener('DOMContentLoaded', () => {
             hideAuthModal();
             // recargar datos locales (si corresponde)
             cargarYRenderizar();
-            showToast(`Bienvenido ${session.user.email}`, 'success', 1800);
+            showToast(`Conectado`, 'success', 1500);
 
             // --- FASE 6: mostrar boton Recolectar solo para admins ---
             try {
@@ -369,7 +370,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const raw = matriculaInput.value;
         const matricula = normalizeMatricula(raw);
         if (!matricula) {
-            showToast('Ingrese matrícula', 'warn');
             matriculaInput.focus();
             return;
         }
@@ -540,7 +540,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 tarifa: data.tarifa,
                 tarifaDia: Number(data.tarifadia || data.tarifadia || 0),
                 tarifaNoche: Number(data.tarifanoche || data.tarifanoche || 0),
-                fechaIngreso: data.fechaingreso || data.created_at,
+                fechaIngreso: data.fechaingreso,
                 adelanto: Number(data.adelanto || 0)
             };
 
@@ -644,10 +644,9 @@ document.addEventListener('DOMContentLoaded', () => {
             pendingRetiro = null;
             modal.style.display = 'none';
             modal.setAttribute('aria-hidden', 'true');
-            matriculaInput.value = '';
-            adelantoInput.value = '';
+            filterInput.value = '';
 
-            showToast('Retiro guardado y registro eliminado', 'info');
+            showToast('Retiro realizado', 'success');
             await cargarYRenderizar();
 
         } catch (err) {
@@ -656,8 +655,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Lógica Recolectar
-    // Mostrar modal de recoleccion con monto actual
+    // RECOLECCION: Mostrar modal con monto actual
     collectBtn.addEventListener('click', async () => {
         const user = await ensureAuthenticated();
         if (!user) return;
@@ -769,11 +767,19 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Funcion para hacer filtro y mayus en input matricula
+    // Funcion para hacer mayus en input matricula
     matriculaInput.addEventListener('input', () => {
         const pos = matriculaInput.selectionStart;
         matriculaInput.value = matriculaInput.value.toUpperCase();
         matriculaInput.setSelectionRange(pos, pos);
+        // note: no llamar a aplicarFiltro() aquí (el filtro ahora está abajo)
+    });
+
+    // Funcion para hacer filtro y mayus en input filtro
+    filterInput.addEventListener('input', () => {
+        const pos = filterInput.selectionStart;
+        filterInput.value = filterInput.value.toUpperCase();
+        filterInput.setSelectionRange(pos, pos);
         aplicarFiltro();
     });
 
