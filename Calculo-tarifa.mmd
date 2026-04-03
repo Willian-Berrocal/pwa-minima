@@ -1,0 +1,26 @@
+graph TD
+    A["Inicio"] --> B{"¿Mismo día?"}
+
+    B -- "Sí" --> C{"¿< 1 hora?"}
+    C -- "Sí" --> D["0"]
+    C -- "No" --> E{"¿< 5 horas?"}
+    E -- "Sí" --> F["Tarifa día - 1"]
+    E -- "No" --> G["Tarifa día"]
+
+    B -- "No" --> I{"¿Hora entrada?"}
+    I -- "Antes de 11am" --> J["+Tarifa día"]
+    I -- "11am a 3pm" --> K["+Tarifa día - 1"]
+    I -- "Después de 3pm" --> L["+0"]
+
+    J --> M["Por cada día completo:\n+Tarifa día\n+Tarifa noche"]
+    K --> M
+    L --> M
+
+    M --> P{"¿Hora salida?"}
+    P -- "Antes de 11am" --> Q["+0"]
+    P -- "11am a 3pm" --> R["+Tarifa día - 1"]
+    P -- "Después de 3pm" --> S["+Tarifa día"]
+
+    Q --> T["Sumar total"]
+    R --> T
+    S --> T
