@@ -52,7 +52,7 @@ document.addEventListener('DOMContentLoaded', () => {
         auto_nuevo: { label: 'Auto nuevo', dia: 6, noche: 8 },
         mototaxi: { label: 'Mototaxi', dia: 2, noche: 4 },
         moto_lineal: { label: 'Moto lineal', dia: 2, noche: 3 },
-        triciclo: { label: 'Triciclo', dia: 1, noche: 4 },
+        triciclo: { label: 'Triciclo', dia: 3, noche: 4 },
         afilador: { label: 'Afilador', dia: 1, noche: 2 },
         camion: { label: 'Camion', dia: 7, noche: 12 },
         // NOTA: no hay entrada para 'otro' aquí, porque 'otro' usará los inputs customDia/customNoche
